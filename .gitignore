@@ -1,0 +1,31 @@
+.DS_Store
+.venv/
+__pycache__/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Dados pessoais e artefatos grandes ficam somente no Google Drive.
+*.wav
+*.mp3
+*.flac
+*.m4a
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+*.jsonl
+data/
+datasets/
+checkpoints/
+outputs/
+runs/
+artifacts/
+
+# Credenciais locais.
+.env
+.env.*
+!.env.example
+credentials.json
+token*
+

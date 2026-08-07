@@ -1,0 +1,76 @@
+ROTEIRO DE GRAVAÇÃO — PORTUGUÊS BRASILEIRO
+
+Instrução: não leia os identificadores entre colchetes. Faça uma pausa de aproximadamente um segundo entre os segmentos. Se errar, espere dois segundos e recomece o segmento inteiro.
+
+[S01]
+Olá! Esta é uma gravação preparada para um experimento de síntese e clonagem de voz. Vou falar de maneira clara, confortável e natural, sem tentar imitar um narrador profissional. A intenção é registrar meu ritmo cotidiano, minha pronúncia e as pequenas variações que tornam cada voz única.
+
+[S02]
+Hoje acordei cedo, abri a janela e percebi que a manhã estava fresca. O céu tinha algumas nuvens, mas a luz atravessava o quarto com suavidade. Preparei café, cortei uma fatia de pão e organizei as tarefas antes de começar o trabalho.
+
+[S03]
+Na mesa havia um caderno azul, duas canetas pretas, um lápis amarelo e uma pequena xícara de chá. Guardei os documentos na primeira gaveta, conectei o carregador e verifiquei se o microfone estava funcionando. Tudo parecia pronto para a experiência.
+
+[S04]
+Você já percebeu como uma mesma frase pode mudar de sentido conforme a entonação? Podemos demonstrar curiosidade, surpresa, dúvida ou certeza apenas alterando o ritmo e a melodia da fala. Essa característica, chamada prosódia, é muito importante para produzir áudio natural.
+
+[S05]
+Agora vou fazer uma pergunta simples: que horas começa a reunião de quarta-feira? Será às oito e quinze, às nove e meia ou somente depois do almoço? Preciso confirmar o horário para evitar atrasos e avisar as outras pessoas com antecedência.
+
+[S06]
+Que ótima notícia! O projeto foi aprovado, os testes passaram e a equipe conseguiu terminar tudo antes do prazo. Fiquei realmente contente com o resultado. Quando o esforço coletivo funciona, vale a pena celebrar, agradecer e registrar o que aprendemos durante o caminho.
+
+[S07]
+Infelizmente, nem todos os dias acontecem como planejamos. Às vezes um arquivo desaparece, a conexão fica instável ou um detalhe importante passa despercebido. Nessas situações, respiro fundo, investigo o problema com calma e procuro uma solução segura antes de continuar.
+
+[S08]
+Entre zero e dez, eu escolheria o número sete. Em dois mil e vinte e seis, uma compra de cento e quarenta e nove reais e noventa centavos pode ser dividida em três parcelas. O telefone informado foi onze, nove, oito sete seis cinco, quatro três dois um.
+
+[S09]
+As temperaturas variaram bastante durante a semana: quinze graus na segunda-feira, vinte e três na terça e vinte e oito na sexta. A previsão indicava quarenta por cento de chance de chuva, com ventos de aproximadamente doze quilômetros por hora no fim da tarde.
+
+[S10]
+Meu endereço de exemplo fica na Avenida das Palmeiras, número trezentos e vinte, bloco B, apartamento quarenta e cinco. O código postal termina em zero sete cinco. Esses dados são fictícios e servem apenas para praticar números, letras isoladas e diferentes formas de pontuação.
+
+[S11]
+No trabalho, usamos siglas como API, GPU, CPU, JSON e HTTP. Também encontramos palavras inglesas, como software, notebook, download, feedback e machine learning. Ao falar, procuro manter uma pronúncia compreensível sem abandonar completamente o meu sotaque brasileiro.
+
+[S12]
+Uma aplicação recebe informações, valida os dados e devolve uma resposta. Se algo falha, o sistema registra o erro para análise. Um bom pipeline precisa ser reproduzível: as entradas, as configurações, as versões e os resultados devem ficar documentados de forma clara.
+
+[S13]
+Imagine uma viagem curta pelo litoral. Primeiro seguimos por uma estrada cercada de árvores; depois atravessamos uma ponte estreita e chegamos a uma praia tranquila. O som das ondas se misturava ao vento, enquanto algumas gaivotas voavam perto das pedras.
+
+[S14]
+Perto dali, uma família preparava o almoço. Havia arroz, feijão, legumes, queijo, peixe grelhado e suco de maracujá. Uma criança perguntou se poderia provar a sobremesa antes da refeição, e todos responderam com uma risada espontânea.
+
+[S15]
+Joana comprou jabuticabas, laranjas, abacaxis e algumas mangas maduras. Xavier preferiu levar ameixas e kiwis. Guilherme escolheu um cacho de uvas, enquanto Zélia procurou gengibre, canela, cravo e folhas de hortelã para preparar uma bebida aromática.
+
+[S16]
+O cachorro pequeno correu pelo quintal, desviou da bicicleta e parou diante do portão. Logo depois, um pássaro pousou no galho mais baixo da jabuticabeira. A cena foi rápida, engraçada e cheia de movimentos difíceis de prever.
+
+[S17]
+Por favor, feche a porta com cuidado, coloque a caixa sobre a prateleira e confira a etiqueta antes de sair. Não pressione o botão vermelho. Caso a luz amarela comece a piscar, desligue o equipamento e chame uma pessoa responsável pela manutenção.
+
+[S18]
+Vamos comparar algumas palavras: avô e avó; sabia e sabiá; pode e pôde; por e pôr. Os acentos ajudam a representar diferenças de som e significado. Também pronunciamos encontros como prato, bloco, ritmo, perspectiva, transporte, abstrato e extraordinário.
+
+[S19]
+Há sons suaves e sons intensos. Falo de chuva, chave, gelo, gente, zebra, casa, passarinho, exceção e próximo. Depois, pratico palavras com R: rua, carro, porta, honra, correr e refrigerador. Cada região brasileira pode realizar esses sons de maneira diferente.
+
+[S20]
+Quando ensino alguma coisa, gosto de começar pelo objetivo e apresentar um exemplo concreto. Em seguida, explico os componentes, mostro como eles se conectam e testo o resultado. Se a primeira tentativa não funcionar, reviso as hipóteses e aprendo com o comportamento observado.
+
+[S21]
+Aprender uma tecnologia nova exige curiosidade e paciência. No início, muitos nomes parecem complicados; com a prática, as relações ficam mais claras. O importante é construir experimentos pequenos, comparar resultados e anotar decisões para que outras pessoas também possam compreender o processo.
+
+[S22]
+Agora falo um pouco mais devagar, deixando pequenas pausas entre as ideias. Uma voz calma não precisa ser monótona. Ela pode destacar palavras importantes, respirar nos pontos corretos e conduzir o ouvinte sem pressa, mantendo a mensagem clara do começo ao fim.
+
+[S23]
+Neste momento, aumento levemente a energia. Temos uma oportunidade excelente para transformar pesquisa em uma ferramenta útil! O desafio é grande, porém cada etapa concluída nos aproxima do objetivo. Vamos verificar os dados, executar o treinamento e ouvir atentamente o resultado.
+
+[S24]
+Para concluir, confirmo que esta gravação foi realizada de forma consciente e voluntária para estudar clonagem da minha própria voz. O áudio deve ser tratado como dado pessoal. Ele não será publicado nem compartilhado sem autorização, e qualquer uso futuro deverá respeitar privacidade, transparência e consentimento.
+

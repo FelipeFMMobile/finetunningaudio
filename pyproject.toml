@@ -1,0 +1,15 @@
+[project]
+name = "finetunning-qwen3-tts"
+version = "0.1.0"
+description = "Notebook didático de clonagem e fine-tuning de voz com Qwen3-TTS"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
