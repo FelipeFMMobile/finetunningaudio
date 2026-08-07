@@ -6,9 +6,9 @@ O código fica neste repositório. Áudios, datasets, credenciais e checkpoints 
 
 ## Notebook principal
 
-[![Abrir no Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/SEU_USUARIO/FineTunning/blob/main/notebooks/01_qwen3_tts_clone_finetuning.ipynb)
+[![Abrir no Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/FelipeFMMobile/finetunningaudio/blob/main/notebooks/01_qwen3_tts_clone_finetuning.ipynb)
 
-Depois de publicar o repositório, substitua `SEU_USUARIO` pelo usuário do GitHub. Em um repositório privado, abra o notebook pelo seletor **Arquivo → Abrir notebook → GitHub** do Colab e autorize o acesso aos repositórios privados.
+Como o repositório é privado, abra o notebook pelo seletor **Arquivo → Abrir notebook → GitHub** do Colab e autorize o acesso aos repositórios privados, caso o link direto solicite autenticação.
 
 ## Antes de começar
 
@@ -68,4 +68,3 @@ Use somente uma voz própria ou uma voz para a qual exista consentimento explíc
 ## Licença
 
 O material autoral deste repositório usa a licença MIT. O Qwen3-TTS e seus pesos seguem as licenças publicadas por seus respectivos autores.
-

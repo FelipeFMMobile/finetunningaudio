@@ -36,7 +36,7 @@ def code(source: str) -> None:
 
 md(
     """
-    <a href="https://colab.research.google.com/github/SEU_USUARIO/FineTunning/blob/main/notebooks/01_qwen3_tts_clone_finetuning.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Abrir no Colab"/></a>
+    <a href="https://colab.research.google.com/github/FelipeFMMobile/finetunningaudio/blob/main/notebooks/01_qwen3_tts_clone_finetuning.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Abrir no Colab"/></a>
 
     # Clonagem e fine-tuning de voz com Qwen3-TTS
 
