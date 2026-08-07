@@ -20,7 +20,7 @@ def test_notebook_has_all_didactic_sections_in_order() -> None:
     expected_titles = [
         "Visão geral do projeto",
         "Ambiente Google Colab",
-        "Google Drive e persistência",
+        "Arquivos da sessão Colab e transferência para o Mac",
         "Configuração central do experimento",
         "Gravação do corpus",
         "Inspeção e normalização",
@@ -49,11 +49,14 @@ def test_all_python_cells_compile_and_have_no_saved_outputs() -> None:
         assert cell["outputs"] == []
 
 
-def test_notebook_targets_colab_gpu_and_drive() -> None:
+def test_notebook_targets_colab_gpu_and_local_transfer() -> None:
     notebook = load_notebook()
     source = "\n".join(cell["source"] for cell in notebook["cells"])
     assert notebook["metadata"]["accelerator"] == "GPU"
-    assert 'drive.mount("/content/drive")' in source
+    assert 'STORAGE_MODE = "upload"' in source
+    assert "files.upload()" in source
+    assert "files.download(str(export_path))" in source
+    assert 'drive.mount("/content/drive")' in source  # modo opcional
     assert "Qwen3-TTS-12Hz-{MODEL_SIZE}-Base" in source
     assert '"QWEN_SYNC_DIR"' in source
     assert "RESUME_CHECKPOINT" in source
@@ -70,4 +73,3 @@ def test_gitignore_blocks_private_artifacts() -> None:
     gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
     for pattern in ["*.wav", "*.safetensors", "*.jsonl", ".env", "checkpoints/"]:
         assert pattern in gitignore
-

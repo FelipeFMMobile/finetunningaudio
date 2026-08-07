@@ -42,7 +42,7 @@ md(
 
     Este notebook é uma aula prática em português brasileiro. Ao final, você terá construído um corpus a partir de uma gravação própria, criado uma linha de base com clonagem *zero-shot*, treinado um modelo single-speaker e comparado os resultados.
 
-    > **Uso responsável:** prossiga somente com sua própria voz ou com consentimento explícito. Voz, transcrições e pesos podem ser dados pessoais. Eles serão mantidos no Google Drive e não devem ser enviados ao Git.
+    > **Uso responsável:** prossiga somente com sua própria voz ou com consentimento explícito. Voz, transcrições e pesos podem ser dados pessoais. Eles não devem ser enviados ao Git.
 
     **Como estudar:** execute as células na ordem. Leia primeiro o texto que antecede cada código e confira o resultado esperado antes de avançar. Células de instalação, transcrição, tokenização e treino podem levar vários minutos.
     """
@@ -58,7 +58,7 @@ md(
 
     O Qwen3-TTS representa fala com um tokenizer acústico de 12 Hz. Ele converte o áudio em códigos discretos, de forma semelhante à conversão de palavras em tokens feita por um LLM. O modelo aprende a prever esses códigos condicionado pelo texto e por uma representação do locutor.
 
-    **Relação com o curso:** seguimos a mesma sequência `voice cloning → data prep → fine-tuning`, mas reunida em um notebook reexecutável, com persistência no Drive e adaptação à GPU do Colab.
+    **Relação com o curso:** seguimos a mesma sequência `voice cloning → data prep → fine-tuning`, mas reunida em um notebook reexecutável, com transferência de arquivos pelo navegador e adaptação à GPU do Colab.
 
     **Resultado esperado:** compreender que a clonagem zero-shot será nossa linha de base e que o treino somente começa depois da validação do corpus.
     """
@@ -157,34 +157,59 @@ code(
 
 md(
     """
-    ## 3. Google Drive e persistência
+    ## 3. Arquivos da sessão Colab e transferência para o Mac
 
-    **Objetivo de aprendizagem:** separar armazenamento temporário e persistente.
+    **Objetivo de aprendizagem:** distinguir o disco remoto do Colab das pastas do seu Mac.
 
-    `/content` é rápido, porém desaparece quando a sessão termina. O Drive é persistente, mas é lento para milhares de arquivos pequenos. Portanto, copiamos a gravação para `/content`, treinamos ali e sincronizamos resultados importantes para `MyDrive/FineTunning`.
+    O painel **Arquivos** mostrado na lateral do Colab representa o disco da máquina virtual remota. Ele não permite navegar diretamente por uma pasta arbitrária do seu Mac. O botão de upload copia um arquivo escolhido no Mac para `/content`; o download faz o caminho inverso.
 
-    A montagem abaixo pedirá autorização da sua conta Google. Nenhum token será gravado no notebook.
+    `/content` é rápido, mas temporário: quando a sessão expira ou é redefinida, seus arquivos desaparecem. Por isso, ao final criaremos um pacote `.tar` para baixar ao Mac. O modo `drive` continua disponível como alternativa persistente; o padrão solicitado é `upload`.
 
-    **Resultado esperado:** as pastas `data`, `runs` e `exports` existirão no Drive.
+    **Resultado esperado:** as pastas `data`, `runs` e `exports` existirão em `/content/FineTunning-storage`.
     """
 )
 
 code(
     """
-    from google.colab import drive
+    from google.colab import files
 
-    drive.mount("/content/drive")
-    DRIVE_ROOT = Path("/content/drive/MyDrive/FineTunning")
+    # "upload" usa apenas o disco temporário do Colab; "drive" monta o Google Drive.
+    STORAGE_MODE = "upload"
+    RESTAURAR_PACOTE_ANTERIOR = False
+    if STORAGE_MODE == "drive":
+        from google.colab import drive
+        drive.mount("/content/drive")
+        STORAGE_ROOT = Path("/content/drive/MyDrive/FineTunning")
+    elif STORAGE_MODE == "upload":
+        STORAGE_ROOT = Path("/content/FineTunning-storage")
+    else:
+        raise ValueError("STORAGE_MODE deve ser 'upload' ou 'drive'.")
+
     for relative in [
         "data/raw", "data/reference", "data/processed", "runs", "exports"
     ]:
-        (DRIVE_ROOT / relative).mkdir(parents=True, exist_ok=True)
+        (STORAGE_ROOT / relative).mkdir(parents=True, exist_ok=True)
 
-    free_drive_gb = shutil.disk_usage(DRIVE_ROOT).free / 1024**3
-    print(f"Drive montado em: {DRIVE_ROOT}")
-    print(f"Espaço livre reportado: {free_drive_gb:.1f} GB")
-    if free_drive_gb < 8:
-        print("ATENÇÃO: menos de 8 GB livres; o modelo 1.7B pode não caber com dois checkpoints.")
+    free_storage_gb = shutil.disk_usage(STORAGE_ROOT).free / 1024**3
+    print(f"Modo de armazenamento: {STORAGE_MODE}")
+    print(f"Pasta de trabalho: {STORAGE_ROOT}")
+    print(f"Espaço livre reportado: {free_storage_gb:.1f} GB")
+    if free_storage_gb < 12:
+        print("ATENÇÃO: menos de 12 GB livres; o modelo 1.7B pode não caber com dois checkpoints.")
+    if STORAGE_MODE == "upload":
+        print("ATENÇÃO: /content é temporário. Baixe o pacote final antes de encerrar a sessão.")
+        if RESTAURAR_PACOTE_ANTERIOR:
+            print("Selecione um pacote .tar baixado por este notebook.")
+            restored = files.upload()
+            if len(restored) != 1:
+                raise RuntimeError("Envie exatamente um pacote .tar.")
+            restored_name, restored_bytes = next(iter(restored.items()))
+            if not restored_name.lower().endswith(".tar"):
+                raise ValueError("O pacote de restauração precisa ter extensão .tar.")
+            restored_path = Path("/content") / Path(restored_name).name
+            restored_path.write_bytes(restored_bytes)
+            subprocess.run(["tar", "-xf", str(restored_path), "-C", str(STORAGE_ROOT)], check=True)
+            print("Pacote restaurado. Informe seu run_id em RUN_ID_OVERRIDE na próxima seção.")
     """
 )
 
@@ -196,7 +221,7 @@ md(
 
     O modo `auto` seleciona 0.6B/FP16/batch 1 em T4, 1.7B/BF16/batch 2 em L4 e batch 4 em A100. O *learning rate* controla o tamanho de cada atualização; um valor alto pode apagar capacidades do modelo, enquanto um valor muito baixo pode produzir pouca adaptação.
 
-    `RUN_ID_OVERRIDE` permite reabrir uma execução anterior. Deixe vazio na primeira vez. Para continuar após uma interrupção, copie o `run_id` salvo no Drive para essa variável e informe `RESUME_CHECKPOINT` mais adiante.
+    `RUN_ID_OVERRIDE` permite identificar uma execução restaurada. No modo `upload`, uma retomada exige reenviar ao Colab um pacote salvo anteriormente; no modo `drive`, os arquivos permanecem disponíveis entre sessões.
 
     **Resultado esperado:** um `config.json` imutável será salvo na pasta da execução.
     """
@@ -230,15 +255,16 @@ code(
         datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + f"_{SPEAKER_NAME}"
     )
     WORK_ROOT = Path("/content/FineTunning-work") / RUN_ID
-    DRIVE_RUN = DRIVE_ROOT / "runs" / RUN_ID
+    RUN_STORE = STORAGE_ROOT / "runs" / RUN_ID
     for path in [WORK_ROOT / "data", WORK_ROOT / "checkpoints", WORK_ROOT / "samples",
-                 DRIVE_RUN / "checkpoints", DRIVE_RUN / "samples"]:
+                 RUN_STORE / "checkpoints", RUN_STORE / "samples"]:
         path.mkdir(parents=True, exist_ok=True)
 
     random.seed(RANDOM_SEED)
     torch.manual_seed(RANDOM_SEED)
     config = {
         "run_id": RUN_ID,
+        "storage_mode": STORAGE_MODE,
         "speaker_name": SPEAKER_NAME,
         "language": LANGUAGE,
         "model_id": MODEL_ID,
@@ -251,7 +277,7 @@ code(
         "qwen_commit": QWEN_COMMIT,
         "random_seed": RANDOM_SEED,
     }
-    (DRIVE_RUN / "config.json").write_text(
+    (RUN_STORE / "config.json").write_text(
         json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     print(json.dumps(config, ensure_ascii=False, indent=2))
@@ -266,7 +292,7 @@ md(
 
     Grave o roteiro `scripts/roteiro_gravacao_ptbr.txt` em um local silencioso. Mantenha distância, ganho e posição do microfone constantes. Faça uma pausa curta entre parágrafos; ela ajudará a segmentação. Se errar, espere dois segundos e recomece o parágrafo.
 
-    Envie o WAV para `MyDrive/FineTunning/data/raw/voz_ptbr.wav`. A célula copia o original para o armazenamento rápido sem modificá-lo.
+    No modo `upload`, a célula abre o seletor de arquivos do navegador: escolha o WAV no seu Mac. Também é possível usar o botão de upload mostrado no painel lateral; nesse caso, coloque o arquivo em `/content/voz_ptbr.wav`. No modo `drive`, o caminho esperado continua sendo `MyDrive/FineTunning/data/raw/voz_ptbr.wav`.
 
     **Erros comuns:** gravação com música, eco, cancelamento agressivo de ruído, clipping ou mudança de microfone no meio do corpus.
     """
@@ -274,13 +300,24 @@ md(
 
 code(
     """
-    RAW_DRIVE_PATH = DRIVE_ROOT / "data" / "raw" / RAW_AUDIO_FILENAME
-    if not RAW_DRIVE_PATH.exists():
-        raise FileNotFoundError(
-            f"Envie sua gravação para {RAW_DRIVE_PATH} e execute a célula novamente."
-        )
+    RAW_SOURCE_PATH = STORAGE_ROOT / "data" / "raw" / RAW_AUDIO_FILENAME
+    if STORAGE_MODE == "upload" and not RAW_SOURCE_PATH.exists():
+        sidebar_upload = Path("/content") / RAW_AUDIO_FILENAME
+        if sidebar_upload.exists():
+            shutil.copy2(sidebar_upload, RAW_SOURCE_PATH)
+        else:
+            print(f"Selecione {RAW_AUDIO_FILENAME} no seu Mac.")
+            uploaded = files.upload()
+            if len(uploaded) != 1:
+                raise RuntimeError("Envie exatamente um arquivo WAV.")
+            uploaded_name, uploaded_bytes = next(iter(uploaded.items()))
+            if not uploaded_name.lower().endswith(".wav"):
+                raise ValueError("O arquivo enviado precisa ter extensão .wav.")
+            RAW_SOURCE_PATH.write_bytes(uploaded_bytes)
+    if not RAW_SOURCE_PATH.exists():
+        raise FileNotFoundError(f"Gravação não encontrada em {RAW_SOURCE_PATH}.")
     RAW_LOCAL_PATH = WORK_ROOT / "data" / RAW_AUDIO_FILENAME
-    shutil.copy2(RAW_DRIVE_PATH, RAW_LOCAL_PATH)
+    shutil.copy2(RAW_SOURCE_PATH, RAW_LOCAL_PATH)
     print("Cópia de trabalho criada:", RAW_LOCAL_PATH)
     """
 )
@@ -293,7 +330,7 @@ md(
 
     O *sample rate* informa quantas amostras representam um segundo. O Qwen3-TTS espera áudio mono a 24 kHz na preparação. Clipping ocorre quando a amplitude encosta repetidamente no limite e causa distorção irreversível.
 
-    A normalização abaixo converte formato e canais, mas não aplica efeitos nem compressão dinâmica. O original permanece intacto no Drive.
+    A normalização abaixo converte formato e canais, mas não aplica efeitos nem compressão dinâmica. O arquivo original no seu Mac permanece intacto.
 
     **Resultado esperado:** áudio entre 5 e 10 minutos, mono, 24 kHz e com baixa proporção de amostras próximas do limite.
     """
@@ -435,7 +472,7 @@ md(
 
     Escolhemos um trecho limpo como referência. Ouça o índice configurado e altere `REFERENCE_INDEX` se ele tiver ruído, hesitação ou transcrição incorreta. O tokenizer Qwen acrescentará `audio_codes`, a representação discreta utilizada como alvo de treinamento.
 
-    **Resultado esperado:** `train_raw.jsonl`, `train_with_codes.jsonl` e um arquivo compactado no Drive.
+    **Resultado esperado:** `train_raw.jsonl`, `train_with_codes.jsonl` e um arquivo compactado na área de armazenamento escolhida.
     """
 )
 
@@ -447,8 +484,8 @@ code(
     reference_path = WORK_ROOT / "data" / "reference.wav"
     shutil.copy2(reference["audio"], reference_path)
     reference_text = reference["text"]
-    (DRIVE_ROOT / "data" / "reference" / f"{RUN_ID}.txt").write_text(reference_text, encoding="utf-8")
-    shutil.copy2(reference_path, DRIVE_ROOT / "data" / "reference" / f"{RUN_ID}.wav")
+    (STORAGE_ROOT / "data" / "reference" / f"{RUN_ID}.txt").write_text(reference_text, encoding="utf-8")
+    shutil.copy2(reference_path, STORAGE_ROOT / "data" / "reference" / f"{RUN_ID}.wav")
     print("Referência:", reference_text)
     display(Audio(filename=str(reference_path)))
 
@@ -484,10 +521,10 @@ code(
 
     archive_base = WORK_ROOT / f"dataset_{RUN_ID}"
     archive_path = Path(shutil.make_archive(str(archive_base), "gztar", root_dir=WORK_ROOT / "data"))
-    archive_drive = DRIVE_ROOT / "data" / "processed" / archive_path.name
-    shutil.copy2(archive_path, archive_drive)
+    archive_store = STORAGE_ROOT / "data" / "processed" / archive_path.name
+    shutil.copy2(archive_path, archive_store)
     print("Dataset tokenizado:", train_codes)
-    print("Backup compactado:", archive_drive)
+    print("Backup compactado:", archive_store)
     """
 )
 
@@ -501,7 +538,7 @@ md(
 
     **Alerta:** o primeiro carregamento baixa vários gigabytes. Não confunda tempo de download com tempo de inferência.
 
-    **Resultado esperado:** três WAVs `zero_shot_*.wav` sincronizados na pasta `samples` do Drive.
+    **Resultado esperado:** três WAVs `zero_shot_*.wav` na pasta `samples` da execução.
     """
 )
 
@@ -529,7 +566,7 @@ code(
         )
         output = WORK_ROOT / "samples" / f"zero_shot_{index}.wav"
         sf.write(output, wavs[0], sr)
-        shutil.copy2(output, DRIVE_RUN / "samples" / output.name)
+        shutil.copy2(output, RUN_STORE / "samples" / output.name)
         print(sentence)
         display(Audio(wavs[0], rate=sr))
     del base_model
@@ -545,11 +582,11 @@ md(
 
     O script oficial combina a perda do primeiro codebook com a perda dos codebooks auxiliares. `batch_size` controla quantos exemplos são processados juntos; a acumulação de gradiente simula um batch maior. Cada época percorre o corpus inteiro.
 
-    Criamos uma cópia adaptada do script oficial somente dentro de `/content`: BF16/FP16 é escolhido pela GPU, `sdpa` substitui FlashAttention e cada checkpoint completo é copiado imediatamente para o Drive. A revisão oficial usada está registrada em `config.json`.
+    Criamos uma cópia adaptada do script oficial somente dentro de `/content`: BF16/FP16 é escolhido pela GPU, `sdpa` substitui FlashAttention e cada checkpoint completo é copiado para a pasta da execução. No modo `upload`, ele continuará sendo temporário até você baixar o pacote final.
 
     **Retomada:** se uma sessão cair, defina `RUN_ID_OVERRIDE` na seção 4 e `RESUME_CHECKPOINT` abaixo. A rotina recompõe o `speaker_encoder` que o checkpoint final omite por projeto.
 
-    **Resultado esperado:** logs de perda e pelo menos um `checkpoint-epoch-N` no Drive.
+    **Resultado esperado:** logs de perda e pelo menos um `checkpoint-epoch-N` na pasta da execução.
     """
 )
 
@@ -619,7 +656,7 @@ code(
 
     INIT_MODEL_PATH = MODEL_PATH
     if RESUME_CHECKPOINT:
-        saved_checkpoint = DRIVE_RUN / "checkpoints" / RESUME_CHECKPOINT
+        saved_checkpoint = RUN_STORE / "checkpoints" / RESUME_CHECKPOINT
         if not saved_checkpoint.exists():
             raise FileNotFoundError(f"Checkpoint de retomada não encontrado: {saved_checkpoint}")
         resume_dir = WORK_ROOT / "resume" / RESUME_CHECKPOINT
@@ -647,7 +684,7 @@ code(
     env.update({
         "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
         "QWEN_MIXED_PRECISION": MIXED_PRECISION,
-        "QWEN_SYNC_DIR": str(DRIVE_RUN / "checkpoints"),
+        "QWEN_SYNC_DIR": str(RUN_STORE / "checkpoints"),
         "QWEN_KEEP_CHECKPOINTS": str(KEEP_CHECKPOINTS),
         "QWEN_METRICS_PATH": str(metrics_local),
     })
@@ -671,10 +708,10 @@ code(
             print(line, end="")
             log_handle.write(line)
         return_code = process.wait()
-    shutil.copy2(train_log, DRIVE_RUN / "train.log")
+    shutil.copy2(train_log, RUN_STORE / "train.log")
     if return_code != 0:
-        raise RuntimeError("O treinamento terminou com erro. Consulte train.log no Drive.")
-    print("Treinamento concluído. Checkpoints:", sorted((DRIVE_RUN / "checkpoints").glob("checkpoint-*")))
+        raise RuntimeError("O treinamento terminou com erro. Consulte train.log na pasta da execução.")
+    print("Treinamento concluído. Checkpoints:", sorted((RUN_STORE / "checkpoints").glob("checkpoint-*")))
     """
 )
 
@@ -695,14 +732,14 @@ md(
 code(
     """
     checkpoints = sorted(
-        (DRIVE_RUN / "checkpoints").glob("checkpoint-epoch-*"),
+        (RUN_STORE / "checkpoints").glob("checkpoint-epoch-*"),
         key=lambda path: int(path.name.rsplit("-", 1)[-1]),
     )
     if not checkpoints:
-        raise FileNotFoundError("Nenhum checkpoint completo foi encontrado no Drive.")
-    selected_drive_checkpoint = checkpoints[-1]
-    selected_local_checkpoint = WORK_ROOT / "evaluation" / selected_drive_checkpoint.name
-    shutil.copytree(selected_drive_checkpoint, selected_local_checkpoint, dirs_exist_ok=True)
+        raise FileNotFoundError("Nenhum checkpoint completo foi encontrado na pasta da execução.")
+    selected_stored_checkpoint = checkpoints[-1]
+    selected_local_checkpoint = WORK_ROOT / "evaluation" / selected_stored_checkpoint.name
+    shutil.copytree(selected_stored_checkpoint, selected_local_checkpoint, dirs_exist_ok=True)
 
     fine_tuned_model = Qwen3TTSModel.from_pretrained(
         str(selected_local_checkpoint),
@@ -716,9 +753,9 @@ code(
         )
         output = WORK_ROOT / "samples" / f"fine_tuned_{index}.wav"
         sf.write(output, wavs[0], sr)
-        shutil.copy2(output, DRIVE_RUN / "samples" / output.name)
+        shutil.copy2(output, RUN_STORE / "samples" / output.name)
         print(f"Frase {index} — zero-shot")
-        display(Audio(filename=str(DRIVE_RUN / "samples" / f"zero_shot_{index}.wav")))
+        display(Audio(filename=str(RUN_STORE / "samples" / f"zero_shot_{index}.wav")))
         print(f"Frase {index} — fine-tuned")
         display(Audio(wavs[0], rate=sr))
     del fine_tuned_model
@@ -730,7 +767,7 @@ code(
     """
     import csv
 
-    evaluation_csv = DRIVE_RUN / "avaliacao_auditiva.csv"
+    evaluation_csv = RUN_STORE / "avaliacao_auditiva.csv"
     with evaluation_csv.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(
             handle,
@@ -761,7 +798,7 @@ md(
     4. reduzir épocas ou learning rate se houver fala acelerada, artefatos ou perda de inteligibilidade;
     5. repetir as mesmas frases e o mesmo formulário para preservar comparabilidade.
 
-    **Conclusão produzida:** o Drive contém configuração, revisão do Qwen, métricas, logs, checkpoints e amostras suficientes para reproduzir e analisar esta execução.
+    **Conclusão produzida:** a pasta da execução contém configuração, revisão do Qwen, métricas, logs, checkpoints e amostras suficientes para reproduzir e analisar o experimento.
     """
 )
 
@@ -771,9 +808,9 @@ md(
 
     **Objetivo de aprendizagem:** distinguir o que pode ser descartado do que precisa ser preservado.
 
-    Modelos em memória ocupam VRAM; arquivos em `/content` ocupam o disco temporário. A célula libera objetos Python e mostra o tamanho persistido. Marque `APAGAR_AREA_TEMPORARIA=True` somente depois de confirmar os arquivos no Drive.
+    Modelos em memória ocupam VRAM; arquivos em `/content` ocupam o disco temporário. A célula libera objetos Python, empacota a execução sem recomprimir os pesos e inicia o download para o Mac no modo `upload`. Não feche a aba antes de o download terminar. Se o navegador bloquear um pacote grande, localize-o em `FineTunning-storage/exports` no painel lateral, abra o menu do arquivo e escolha **Fazer download**.
 
-    Os dois checkpoints recentes permanecem em `runs/<run_id>/checkpoints`. O dataset compactado permanece em `data/processed`, e os WAVs comparativos em `samples`.
+    Os dois checkpoints recentes entram no pacote em `runs/<run_id>/checkpoints`. O dataset compactado fica em `data/processed`, e os WAVs comparativos em `samples`.
 
     **Resultado esperado:** memória CUDA liberada e um resumo final de localização e tamanho.
     """
@@ -783,17 +820,29 @@ code(
     """
     import gc
 
+    BAIXAR_PACOTE_COMPLETO = True
     APAGAR_AREA_TEMPORARIA = False
     gc.collect()
     torch.cuda.empty_cache()
 
     persistent_bytes = sum(
-        path.stat().st_size for path in DRIVE_RUN.rglob("*") if path.is_file()
+        path.stat().st_size for path in RUN_STORE.rglob("*") if path.is_file()
     )
-    print(f"Execução persistida: {DRIVE_RUN}")
-    print(f"Tamanho persistido: {persistent_bytes / 1024**3:.2f} GB")
-    print(f"Dataset compactado: {archive_drive}")
+    print(f"Execução armazenada em: {RUN_STORE}")
+    print(f"Tamanho da execução: {persistent_bytes / 1024**3:.2f} GB")
+    print(f"Dataset compactado: {archive_store}")
     print(f"Avaliação: {evaluation_csv}")
+
+    if STORAGE_MODE == "upload" and BAIXAR_PACOTE_COMPLETO:
+        export_path = STORAGE_ROOT / "exports" / f"{RUN_ID}.tar"
+        subprocess.run(
+            ["tar", "-cf", str(export_path), "-C", str(STORAGE_ROOT),
+             "runs/" + RUN_ID, "data/reference", "data/processed"],
+            check=True,
+        )
+        print(f"Pacote pronto ({export_path.stat().st_size / 1024**3:.2f} GB): {export_path}")
+        print("O navegador iniciará o download. Aguarde a conclusão antes de fechar o Colab.")
+        files.download(str(export_path))
 
     if APAGAR_AREA_TEMPORARIA:
         if str(WORK_ROOT).startswith("/content/FineTunning-work/") and WORK_ROOT.exists():

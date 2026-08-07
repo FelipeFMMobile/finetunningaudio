@@ -2,7 +2,7 @@
 
 Projeto didático para preparar uma gravação em português brasileiro, executar clonagem de voz *zero-shot*, fazer *fine-tuning* single-speaker do Qwen3-TTS e comparar os resultados.
 
-O código fica neste repositório. Áudios, datasets, credenciais e checkpoints ficam somente no Google Drive.
+O código fica neste repositório. Por padrão, a gravação é enviada do Mac para a sessão do Colab pelo navegador e os resultados são baixados em um pacote `.tar`. O Google Drive permanece disponível como modo opcional.
 
 ## Notebook principal
 
@@ -14,27 +14,27 @@ Como o repositório é privado, abra o notebook pelo seletor **Arquivo → Abrir
 
 1. Leia o [guia de gravação](docs/GUIA_GRAVACAO.md).
 2. Grave o texto de [`scripts/roteiro_gravacao_ptbr.txt`](scripts/roteiro_gravacao_ptbr.txt) em um único WAV.
-3. Crie no Drive a pasta `MyDrive/FineTunning/data/raw/`.
-4. Envie a gravação como `voz_ptbr.wav`.
-5. Abra o notebook no Colab e escolha **Ambiente de execução → Alterar tipo de ambiente de execução → GPU**.
+3. Abra o notebook no Colab e escolha **Ambiente de execução → Alterar tipo de ambiente de execução → GPU**.
+4. Execute as células em ordem. Quando solicitado, escolha `voz_ptbr.wav` no seletor de arquivos do navegador.
+5. Ao final, aguarde o download do pacote `<run_id>.tar` antes de fechar a sessão.
 
 ## Organização dos artefatos
 
 ```text
-GitHub privado                       Google Drive
-├── notebook                         MyDrive/FineTunning/
-├── roteiro de gravação              ├── data/raw/voz_ptbr.wav
-├── documentação                     ├── data/reference/
-└── testes                           ├── data/processed/
+Mac                                  Sessão Colab
+├── voz_ptbr.wav ───── upload ─────► /content/FineTunning-storage/
+└── <run_id>.tar ◄─── download ───── ├── data/
                                      ├── exports/
-                                     └── runs/<run_id>/
-                                         ├── config.json
-                                         ├── metrics.jsonl
-                                         ├── checkpoints/
-                                         └── samples/
+GitHub privado                       └── runs/<run_id>/
+├── notebook                             ├── config.json
+├── roteiro                               ├── metrics.jsonl
+├── documentação                         ├── checkpoints/
+└── testes                               └── samples/
 ```
 
-Durante o treinamento, os dados são copiados para `/content/FineTunning-work`, o disco temporário rápido do Colab. Cada época concluída é sincronizada com o Drive. O notebook mantém os dois checkpoints mais recentes para limitar o uso de espaço.
+O painel **Arquivos** do Colab mostra o disco da máquina virtual remota, não as pastas do Mac. `/content` é temporário e pode desaparecer quando a sessão expira. O notebook mantém os dois checkpoints mais recentes e cria um pacote final para download. Para persistência automática, altere `STORAGE_MODE = "upload"` para `STORAGE_MODE = "drive"` na seção 3.
+
+Para restaurar um pacote baixado anteriormente, defina `RESTAURAR_PACOTE_ANTERIOR = True`, envie o `.tar` quando solicitado e preencha `RUN_ID_OVERRIDE` com o identificador da execução restaurada.
 
 ## Estratégia automática de GPU
 
