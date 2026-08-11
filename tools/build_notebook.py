@@ -1,4 +1,4 @@
-"""Gera o notebook didático sem depender de nbformat."""
+"""Gera o notebook didático e compacto sem depender de nbformat."""
 
 from __future__ import annotations
 
@@ -22,12 +22,13 @@ def md(source: str) -> None:
     )
 
 
-def code(source: str) -> None:
+def code(source: str, *, compact: bool = False) -> None:
+    metadata = {"cellView": "form"} if compact else {}
     cells.append(
         {
             "cell_type": "code",
             "execution_count": None,
-            "metadata": {},
+            "metadata": metadata,
             "outputs": [],
             "source": textwrap.dedent(source).strip() + "\n",
         }
@@ -38,51 +39,35 @@ md(
     """
     <a href="https://colab.research.google.com/github/FelipeFMMobile/finetunningaudio/blob/main/notebooks/01_qwen3_tts_clone_finetuning.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Abrir no Colab"/></a>
 
-    # Clonagem e fine-tuning de voz com Qwen3-TTS
+    # Pipeline Qwen3-TTS: da gravação ao fine-tuning
 
-    Este notebook é uma aula prática em português brasileiro. Ao final, você terá construído um corpus a partir de uma gravação própria, criado uma linha de base com clonagem *zero-shot*, treinado um modelo single-speaker e comparado os resultados.
+    Este notebook reúne o fluxo completo do curso em um único experimento para Google Colab. A ordem foi ajustada porque extrairemos o áudio de referência da própria gravação: primeiro preparamos os dados, depois criamos a linha de base zero-shot e, por último, treinamos o modelo.
 
-    > **Uso responsável:** prossiga somente com sua própria voz ou com consentimento explícito. Voz, transcrições e pesos podem ser dados pessoais. Eles não devem ser enviados ao Git.
+    | Parte deste notebook | Referência do curso |
+    |---|---|
+    | Parte A — Preparação dos dados | `02_data_prep.ipynb` |
+    | Parte B — Clonagem zero-shot | `01_voice_cloning.ipynb` |
+    | Parte C — Fine-tuning e teste | `03_finetune.ipynb` |
 
-    **Como estudar:** execute as células na ordem. Leia primeiro o texto que antecede cada código e confira o resultado esperado antes de avançar. Células de instalação, transcrição, tokenização e treino podem levar vários minutos.
+    > Use somente sua própria voz ou uma voz com consentimento explícito. Áudio e pesos não serão enviados ao GitHub.
     """
 )
 
 md(
     """
-    ## 1. Visão geral do projeto
+    ## 1. Preparação do Colab — equivalente ao “Setup” dos três notebooks
 
-    **Objetivo de aprendizagem:** distinguir síntese de voz, clonagem *zero-shot* e *fine-tuning*.
+    O navegador está no seu Mac, mas o código roda em uma máquina virtual do Google. Selecione **Ambiente de execução → Alterar tipo de ambiente de execução → GPU**. Uma T4 usará o Qwen3-TTS 0.6B em FP16; L4 e A100 usarão o 1.7B em BF16.
 
-    Um sistema TTS (*text-to-speech*) transforma texto em fala. Na clonagem *zero-shot*, o modelo usa poucos segundos de áudio como referência durante a geração, sem alterar seus pesos. No *fine-tuning*, ajustamos os pesos do modelo com vários pares de áudio e transcrição para criar uma identidade de locutor persistente.
-
-    O Qwen3-TTS representa fala com um tokenizer acústico de 12 Hz. Ele converte o áudio em códigos discretos, de forma semelhante à conversão de palavras em tokens feita por um LLM. O modelo aprende a prever esses códigos condicionado pelo texto e por uma representação do locutor.
-
-    **Relação com o curso:** seguimos a mesma sequência `voice cloning → data prep → fine-tuning`, mas reunida em um notebook reexecutável, com transferência de arquivos pelo navegador e adaptação à GPU do Colab.
-
-    **Resultado esperado:** compreender que a clonagem zero-shot será nossa linha de base e que o treino somente começa depois da validação do corpus.
-    """
-)
-
-md(
-    """
-    ## 2. Ambiente Google Colab
-
-    **Objetivo de aprendizagem:** identificar a GPU e entender como ela influencia modelo, precisão e batch.
-
-    O navegador roda no seu Mac, mas as células são executadas em uma máquina temporária do Google. CUDA é a plataforma usada pelo PyTorch para acessar GPUs NVIDIA. Uma T4 tem menos memória e não oferece o mesmo suporte eficiente a BF16 de uma L4 ou A100; por isso usaremos FP16 e o modelo 0.6B nela.
-
-    Antes de executar, selecione **Ambiente de execução → Alterar tipo de ambiente de execução → GPU**. A célula abaixo falha cedo e com uma mensagem clara se CUDA não estiver disponível.
-
-    **Resultado esperado:** nome da GPU, memória aproximada e versão CUDA serão exibidos.
+    A primeira célula valida CUDA. A segunda instala `ffmpeg`, Whisper e o Qwen3-TTS oficial. Ela fica recolhida como formulário porque é infraestrutura, não a parte central do aprendizado.
     """
 )
 
 code(
     """
+    import gc
     import json
     import os
-    import platform
     import random
     import shutil
     import subprocess
@@ -94,27 +79,13 @@ code(
 
     if not torch.cuda.is_available():
         raise RuntimeError(
-            "CUDA não foi encontrada. No Colab, selecione Ambiente de execução → "
-            "Alterar tipo de ambiente de execução → GPU e reinicie a sessão."
+            "CUDA não encontrada. Selecione Ambiente de execução → "
+            "Alterar tipo de ambiente de execução → GPU."
         )
 
     GPU_NAME = torch.cuda.get_device_name(0)
     GPU_MEMORY_GB = torch.cuda.get_device_properties(0).total_memory / 1024**3
-    print(f"GPU: {GPU_NAME}")
-    print(f"Memória: {GPU_MEMORY_GB:.1f} GB")
-    print(f"PyTorch: {torch.__version__} | CUDA: {torch.version.cuda}")
-    """
-)
-
-md(
-    """
-    ### 2.1 Instalação reproduzível
-
-    A sessão do Colab é descartável. Instalamos `ffmpeg` para conversão de áudio, o Qwen3-TTS oficial, Whisper para transcrição e bibliotecas auxiliares. O repositório oficial é clonado uma única vez na sessão e seu commit será registrado junto ao experimento.
-
-    Usamos `sdpa`, a implementação de atenção do PyTorch, para evitar a compilação demorada do FlashAttention. Isso favorece compatibilidade entre T4, L4 e A100.
-
-    **Alerta:** reinicie o ambiente somente se o `pip` solicitar. Uma nova sessão exige executar esta célula novamente.
+    print(f"GPU: {GPU_NAME} | memória: {GPU_MEMORY_GB:.1f} GB")
     """
 )
 
@@ -131,20 +102,9 @@ code(
     subprocess.run(["apt-get", "install", "-y", "-qq", "ffmpeg"], check=True)
     subprocess.run(
         [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "-q",
-            "-e",
-            str(QWEN_REPO),
-            "openai-whisper",
-            "pydub",
-            "soundfile",
-            "accelerate",
-            "tensorboard",
-            "huggingface_hub",
-            "safetensors",
+            sys.executable, "-m", "pip", "install", "-q", "-e", str(QWEN_REPO),
+            "openai-whisper", "pydub", "soundfile", "accelerate",
+            "tensorboard", "huggingface_hub", "safetensors",
         ],
         check=True,
     )
@@ -152,20 +112,17 @@ code(
         ["git", "-C", str(QWEN_REPO), "rev-parse", "HEAD"], text=True
     ).strip()
     print("Qwen3-TTS preparado no commit:", QWEN_COMMIT)
-    """
+    """,
+    compact=True,
 )
 
 md(
     """
-    ## 3. Arquivos da sessão Colab e transferência para o Mac
+    ### 1.1 Configuração e upload da gravação
 
-    **Objetivo de aprendizagem:** distinguir o disco remoto do Colab das pastas do seu Mac.
+    O painel **Arquivos** do Colab mostra o disco remoto `/content`, não uma pasta do Mac. Ao executar esta célula, escolha `voz_ptbr.wav` no seletor. Tudo será armazenado temporariamente em `/content/FineTunning-storage/<run_id>` e baixado como um pacote ao final.
 
-    O painel **Arquivos** mostrado na lateral do Colab representa o disco da máquina virtual remota. Ele não permite navegar diretamente por uma pasta arbitrária do seu Mac. O botão de upload copia um arquivo escolhido no Mac para `/content`; o download faz o caminho inverso.
-
-    `/content` é rápido, mas temporário: quando a sessão expira ou é redefinida, seus arquivos desaparecem. Por isso, ao final criaremos um pacote `.tar` para baixar ao Mac. O modo `drive` continua disponível como alternativa persistente; o padrão solicitado é `upload`.
-
-    **Resultado esperado:** as pastas `data`, `runs` e `exports` existirão em `/content/FineTunning-storage`.
+    As variáveis abaixo concentram as decisões do experimento. Para o primeiro teste, altere apenas `SPEAKER_NAME` se desejar.
     """
 )
 
@@ -173,63 +130,6 @@ code(
     """
     from google.colab import files
 
-    # "upload" usa apenas o disco temporário do Colab; "drive" monta o Google Drive.
-    STORAGE_MODE = "upload"
-    RESTAURAR_PACOTE_ANTERIOR = False
-    if STORAGE_MODE == "drive":
-        from google.colab import drive
-        drive.mount("/content/drive")
-        STORAGE_ROOT = Path("/content/drive/MyDrive/FineTunning")
-    elif STORAGE_MODE == "upload":
-        STORAGE_ROOT = Path("/content/FineTunning-storage")
-    else:
-        raise ValueError("STORAGE_MODE deve ser 'upload' ou 'drive'.")
-
-    for relative in [
-        "data/raw", "data/reference", "data/processed", "runs", "exports"
-    ]:
-        (STORAGE_ROOT / relative).mkdir(parents=True, exist_ok=True)
-
-    free_storage_gb = shutil.disk_usage(STORAGE_ROOT).free / 1024**3
-    print(f"Modo de armazenamento: {STORAGE_MODE}")
-    print(f"Pasta de trabalho: {STORAGE_ROOT}")
-    print(f"Espaço livre reportado: {free_storage_gb:.1f} GB")
-    if free_storage_gb < 12:
-        print("ATENÇÃO: menos de 12 GB livres; o modelo 1.7B pode não caber com dois checkpoints.")
-    if STORAGE_MODE == "upload":
-        print("ATENÇÃO: /content é temporário. Baixe o pacote final antes de encerrar a sessão.")
-        if RESTAURAR_PACOTE_ANTERIOR:
-            print("Selecione um pacote .tar baixado por este notebook.")
-            restored = files.upload()
-            if len(restored) != 1:
-                raise RuntimeError("Envie exatamente um pacote .tar.")
-            restored_name, restored_bytes = next(iter(restored.items()))
-            if not restored_name.lower().endswith(".tar"):
-                raise ValueError("O pacote de restauração precisa ter extensão .tar.")
-            restored_path = Path("/content") / Path(restored_name).name
-            restored_path.write_bytes(restored_bytes)
-            subprocess.run(["tar", "-xf", str(restored_path), "-C", str(STORAGE_ROOT)], check=True)
-            print("Pacote restaurado. Informe seu run_id em RUN_ID_OVERRIDE na próxima seção.")
-    """
-)
-
-md(
-    """
-    ## 4. Configuração central do experimento
-
-    **Objetivo de aprendizagem:** relacionar hiperparâmetros com memória, velocidade e estabilidade.
-
-    O modo `auto` seleciona 0.6B/FP16/batch 1 em T4, 1.7B/BF16/batch 2 em L4 e batch 4 em A100. O *learning rate* controla o tamanho de cada atualização; um valor alto pode apagar capacidades do modelo, enquanto um valor muito baixo pode produzir pouca adaptação.
-
-    `RUN_ID_OVERRIDE` permite identificar uma execução restaurada. No modo `upload`, uma retomada exige reenviar ao Colab um pacote salvo anteriormente; no modo `drive`, os arquivos permanecem disponíveis entre sessões.
-
-    **Resultado esperado:** um `config.json` imutável será salvo na pasta da execução.
-    """
-)
-
-code(
-    """
-    # Configurações que você pode editar.
     SPEAKER_NAME = "felipe"
     RAW_AUDIO_FILENAME = "voz_ptbr.wav"
     LANGUAGE = "Portuguese"
@@ -237,10 +137,8 @@ code(
     WHISPER_MODEL = "medium"
     NUM_EPOCHS = 5
     LEARNING_RATE = 2e-6
-    KEEP_CHECKPOINTS = 2
     REFERENCE_INDEX = 0
     RANDOM_SEED = 42
-    RUN_ID_OVERRIDE = ""  # Exemplo: 20260806T210300Z_felipe
 
     gpu_upper = GPU_NAME.upper()
     if "T4" in gpu_upper or GPU_MEMORY_GB < 20:
@@ -251,33 +149,35 @@ code(
         MODEL_SIZE, MIXED_PRECISION, BATCH_SIZE = "1.7B", "bf16", 4
 
     MODEL_ID = f"Qwen/Qwen3-TTS-12Hz-{MODEL_SIZE}-Base"
-    RUN_ID = RUN_ID_OVERRIDE or (
-        datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + f"_{SPEAKER_NAME}"
-    )
-    WORK_ROOT = Path("/content/FineTunning-work") / RUN_ID
-    RUN_STORE = STORAGE_ROOT / "runs" / RUN_ID
-    for path in [WORK_ROOT / "data", WORK_ROOT / "checkpoints", WORK_ROOT / "samples",
-                 RUN_STORE / "checkpoints", RUN_STORE / "samples"]:
-        path.mkdir(parents=True, exist_ok=True)
+    RUN_ID = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + f"_{SPEAKER_NAME}"
+    RUN_DIR = Path("/content/FineTunning-storage") / RUN_ID
+    for name in ["data/raw", "data/chunks", "samples", "checkpoints"]:
+        (RUN_DIR / name).mkdir(parents=True, exist_ok=True)
 
     random.seed(RANDOM_SEED)
     torch.manual_seed(RANDOM_SEED)
+
+    raw_path = RUN_DIR / "data" / "raw" / RAW_AUDIO_FILENAME
+    sidebar_path = Path("/content") / RAW_AUDIO_FILENAME
+    if sidebar_path.exists():
+        shutil.copy2(sidebar_path, raw_path)
+    else:
+        print(f"Escolha {RAW_AUDIO_FILENAME} no seu Mac.")
+        uploaded = files.upload()
+        if len(uploaded) != 1:
+            raise RuntimeError("Envie exatamente um arquivo WAV.")
+        uploaded_name, uploaded_bytes = next(iter(uploaded.items()))
+        if not uploaded_name.lower().endswith(".wav"):
+            raise ValueError("O arquivo precisa ter extensão .wav.")
+        raw_path.write_bytes(uploaded_bytes)
+
     config = {
-        "run_id": RUN_ID,
-        "storage_mode": STORAGE_MODE,
-        "speaker_name": SPEAKER_NAME,
-        "language": LANGUAGE,
-        "model_id": MODEL_ID,
-        "gpu": GPU_NAME,
-        "gpu_memory_gb": round(GPU_MEMORY_GB, 2),
-        "mixed_precision": MIXED_PRECISION,
-        "batch_size": BATCH_SIZE,
-        "learning_rate": LEARNING_RATE,
-        "num_epochs": NUM_EPOCHS,
-        "qwen_commit": QWEN_COMMIT,
-        "random_seed": RANDOM_SEED,
+        "run_id": RUN_ID, "speaker_name": SPEAKER_NAME, "model_id": MODEL_ID,
+        "gpu": GPU_NAME, "mixed_precision": MIXED_PRECISION,
+        "batch_size": BATCH_SIZE, "learning_rate": LEARNING_RATE,
+        "num_epochs": NUM_EPOCHS, "qwen_commit": QWEN_COMMIT,
     }
-    (RUN_STORE / "config.json").write_text(
+    (RUN_DIR / "config.json").write_text(
         json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     print(json.dumps(config, ensure_ascii=False, indent=2))
@@ -286,53 +186,13 @@ code(
 
 md(
     """
-    ## 5. Gravação do corpus
+    ## 2. Parte A — Preparação dos dados (`02_data_prep.ipynb`)
 
-    **Objetivo de aprendizagem:** reconhecer como a qualidade da entrada limita a qualidade do modelo.
+    ### 2.1 Inspecionar, normalizar e segmentar — original §§2–3
 
-    Grave o roteiro `scripts/roteiro_gravacao_ptbr.txt` em um local silencioso. Mantenha distância, ganho e posição do microfone constantes. Faça uma pausa curta entre parágrafos; ela ajudará a segmentação. Se errar, espere dois segundos e recomece o parágrafo.
+    Primeiro conferimos duração, canais e sample rate. Em seguida, convertemos para mono/24 kHz e dividimos a gravação nas pausas. O treino trabalha melhor com exemplos curtos; manteremos somente trechos entre 2 e 15 segundos.
 
-    No modo `upload`, a célula abre o seletor de arquivos do navegador: escolha o WAV no seu Mac. Também é possível usar o botão de upload mostrado no painel lateral; nesse caso, coloque o arquivo em `/content/voz_ptbr.wav`. No modo `drive`, o caminho esperado continua sendo `MyDrive/FineTunning/data/raw/voz_ptbr.wav`.
-
-    **Erros comuns:** gravação com música, eco, cancelamento agressivo de ruído, clipping ou mudança de microfone no meio do corpus.
-    """
-)
-
-code(
-    """
-    RAW_SOURCE_PATH = STORAGE_ROOT / "data" / "raw" / RAW_AUDIO_FILENAME
-    if STORAGE_MODE == "upload" and not RAW_SOURCE_PATH.exists():
-        sidebar_upload = Path("/content") / RAW_AUDIO_FILENAME
-        if sidebar_upload.exists():
-            shutil.copy2(sidebar_upload, RAW_SOURCE_PATH)
-        else:
-            print(f"Selecione {RAW_AUDIO_FILENAME} no seu Mac.")
-            uploaded = files.upload()
-            if len(uploaded) != 1:
-                raise RuntimeError("Envie exatamente um arquivo WAV.")
-            uploaded_name, uploaded_bytes = next(iter(uploaded.items()))
-            if not uploaded_name.lower().endswith(".wav"):
-                raise ValueError("O arquivo enviado precisa ter extensão .wav.")
-            RAW_SOURCE_PATH.write_bytes(uploaded_bytes)
-    if not RAW_SOURCE_PATH.exists():
-        raise FileNotFoundError(f"Gravação não encontrada em {RAW_SOURCE_PATH}.")
-    RAW_LOCAL_PATH = WORK_ROOT / "data" / RAW_AUDIO_FILENAME
-    shutil.copy2(RAW_SOURCE_PATH, RAW_LOCAL_PATH)
-    print("Cópia de trabalho criada:", RAW_LOCAL_PATH)
-    """
-)
-
-md(
-    """
-    ## 6. Inspeção e normalização
-
-    **Objetivo de aprendizagem:** interpretar sample rate, canais, duração e clipping.
-
-    O *sample rate* informa quantas amostras representam um segundo. O Qwen3-TTS espera áudio mono a 24 kHz na preparação. Clipping ocorre quando a amplitude encosta repetidamente no limite e causa distorção irreversível.
-
-    A normalização abaixo converte formato e canais, mas não aplica efeitos nem compressão dinâmica. O arquivo original no seu Mac permanece intacto.
-
-    **Resultado esperado:** áudio entre 5 e 10 minutos, mono, 24 kHz e com baixa proporção de amostras próximas do limite.
+    Escute os primeiros vinte segundos. Se houver distorção, eco forte ou ruído constante, regravar costuma ser melhor do que tentar “consertar” o áudio com filtros agressivos.
     """
 )
 
@@ -342,85 +202,49 @@ code(
     import soundfile as sf
     from IPython.display import Audio, display
     from pydub import AudioSegment
-
-    original_info = sf.info(str(RAW_LOCAL_PATH))
-    print(original_info)
-    duration_min = original_info.duration / 60
-    if not 4 <= duration_min <= 12:
-        print(f"ATENÇÃO: duração de {duration_min:.1f} min fora da faixa esperada de 5–10 min.")
-
-    normalized_path = WORK_ROOT / "data" / "voz_normalizada_24k_mono.wav"
-    segment = AudioSegment.from_file(str(RAW_LOCAL_PATH)).set_frame_rate(24_000).set_channels(1)
-    segment.export(str(normalized_path), format="wav")
-    waveform, sample_rate = sf.read(normalized_path)
-    clipping_ratio = float(np.mean(np.abs(waveform) >= 0.99))
-    print(f"Normalizado: {sample_rate} Hz, mono, {len(waveform) / sample_rate / 60:.1f} min")
-    print(f"Amostras próximas de clipping: {clipping_ratio:.4%}")
-    if clipping_ratio > 0.001:
-        print("ATENÇÃO: há indícios de clipping. Considere regravar com ganho menor.")
-    display(Audio(waveform[: sample_rate * 20], rate=sample_rate))
-    """
-)
-
-md(
-    """
-    ## 7. Segmentação por silêncio
-
-    **Objetivo de aprendizagem:** entender por que exemplos curtos facilitam o alinhamento entre texto e áudio.
-
-    Uma gravação longa contém muitas frases. O treinamento funciona melhor quando cada exemplo representa uma unidade curta e coerente. Detectamos pausas, preservamos 120 ms nas bordas e aceitamos trechos entre 2 e 15 segundos.
-
-    O limiar de silêncio é calculado em relação ao volume médio da própria gravação. Se quase nenhum trecho for produzido, aumente `MIN_SILENCE_MS`; se houver cortes no meio de palavras, reduza a sensibilidade usando um valor mais baixo para `SILENCE_THRESHOLD_OFFSET_DB`.
-
-    **Resultado esperado:** dezenas de WAVs curtos em uma pasta exclusiva desta execução.
-    """
-)
-
-code(
-    """
     from pydub.silence import split_on_silence
 
-    MIN_DURATION_S = 2.0
-    MAX_DURATION_S = 15.0
-    MIN_SILENCE_MS = 550
-    KEEP_SILENCE_MS = 120
-    SILENCE_THRESHOLD_OFFSET_DB = 18
+    info = sf.info(str(raw_path))
+    print(info)
+    if not 4 <= info.duration / 60 <= 12:
+        print(f"ATENÇÃO: duração de {info.duration / 60:.1f} min; esperávamos 5–10 min.")
 
-    chunks_dir = WORK_ROOT / "data" / "chunks"
-    chunks_dir.mkdir(parents=True, exist_ok=True)
-    silence_threshold = segment.dBFS - SILENCE_THRESHOLD_OFFSET_DB
+    normalized_path = RUN_DIR / "data" / "voz_24k_mono.wav"
+    recording = AudioSegment.from_file(str(raw_path)).set_frame_rate(24_000).set_channels(1)
+    recording.export(normalized_path, format="wav")
+    waveform, sample_rate = sf.read(normalized_path)
+    clipping = float(np.mean(np.abs(waveform) >= 0.99))
+    print(f"Normalizado: {sample_rate} Hz | clipping: {clipping:.4%}")
+    display(Audio(waveform[: sample_rate * 20], rate=sample_rate))
+
+    chunks_dir = RUN_DIR / "data" / "chunks"
     raw_chunks = split_on_silence(
-        segment,
-        min_silence_len=MIN_SILENCE_MS,
-        silence_thresh=silence_threshold,
-        keep_silence=KEEP_SILENCE_MS,
+        recording,
+        min_silence_len=550,
+        silence_thresh=recording.dBFS - 18,
+        keep_silence=120,
     )
     utterances = []
     for index, chunk in enumerate(raw_chunks):
         duration = len(chunk) / 1000
-        if MIN_DURATION_S <= duration <= MAX_DURATION_S:
+        if 2 <= duration <= 15:
             path = chunks_dir / f"utt_{index:04d}.wav"
             chunk.export(path, format="wav")
             utterances.append({"audio": path, "duration": duration})
 
-    total_minutes = sum(item["duration"] for item in utterances) / 60
-    print(f"Trechos aceitos: {len(utterances)} | duração útil: {total_minutes:.1f} min")
+    print(f"Trechos: {len(utterances)} | duração útil: {sum(x['duration'] for x in utterances) / 60:.1f} min")
     if len(utterances) < 20:
-        raise RuntimeError("Poucos trechos foram produzidos. Revise pausas e parâmetros de silêncio.")
+        raise RuntimeError("Poucos trechos. Verifique as pausas e a qualidade da gravação.")
     """
 )
 
 md(
     """
-    ## 8. Transcrição automática e revisão
+    ### 2.2 Transcrever e revisar — original §§4–5
 
-    **Objetivo de aprendizagem:** compreender que transcrição é o rótulo supervisionado do áudio.
+    Whisper produz o texto associado a cada trecho. Esse texto é o rótulo supervisionado: uma transcrição errada ensina uma relação errada entre escrita e som. Depois da transcrição, ouviremos dez exemplos aleatórios.
 
-    Whisper converte cada trecho em texto. Um rótulo incorreto ensina ao modelo uma relação errada entre escrita e som; por isso a revisão auditiva é parte do pipeline, não uma etapa decorativa. Usamos português, decodificação determinística e não carregamos contexto entre trechos.
-
-    A célula pode levar vários minutos. Em seguida, serão exibidas amostras aleatórias. Para corrigir um texto, edite diretamente `utterances[i]["text"]` em uma nova célula antes de continuar.
-
-    **Resultado esperado:** todos os exemplos mantidos terão texto não vazio e será possível ouvir uma amostra.
+    Para corrigir um item, execute `utterances[ÍNDICE]["text"] = "texto correto"` antes de continuar.
     """
 )
 
@@ -432,64 +256,57 @@ code(
     transcribed = []
     for index, item in enumerate(utterances, start=1):
         result = whisper_model.transcribe(
-            str(item["audio"]),
-            language=WHISPER_LANGUAGE,
-            beam_size=5,
-            temperature=0.0,
-            condition_on_previous_text=False,
+            str(item["audio"]), language=WHISPER_LANGUAGE,
+            beam_size=5, temperature=0.0, condition_on_previous_text=False,
         )
         text = result["text"].strip()
         if len(text) >= 5:
             transcribed.append({**item, "text": text})
         if index % 10 == 0 or index == len(utterances):
             print(f"Transcritos: {index}/{len(utterances)}")
+
     utterances = transcribed
-    print("Trechos mantidos:", len(utterances))
     del whisper_model
     torch.cuda.empty_cache()
+    print("Trechos mantidos:", len(utterances))
     """
 )
 
 code(
     """
-    review_count = min(10, len(utterances))
-    for index in random.sample(range(len(utterances)), review_count):
+    for index in random.sample(range(len(utterances)), min(10, len(utterances))):
         item = utterances[index]
         print(f"Índice {index} | {item['duration']:.1f}s | {item['text']}")
         display(Audio(filename=str(item["audio"])))
 
-    print("Para corrigir: utterances[ÍNDICE]['text'] = 'Transcrição corrigida.'")
+    print("Correção: utterances[ÍNDICE]['text'] = 'Transcrição correta.'")
     """
 )
 
 md(
     """
-    ## 9. Manifestos JSONL e códigos acústicos
+    ### 2.3 Criar JSONL e códigos acústicos — original §§6–7
 
-    **Objetivo de aprendizagem:** conhecer a interface de dados usada pelo fine-tuning oficial.
+    Cada linha de `train_raw.jsonl` contém `audio`, `text` e `ref_audio`. Escolhemos um trecho limpo como referência e usamos o mesmo arquivo em todo o dataset, como recomenda o Qwen. Depois, o tokenizer de 12 Hz converte cada WAV em `audio_codes`.
 
-    JSONL contém um objeto JSON por linha. `audio` aponta para o trecho, `text` contém sua transcrição e `ref_audio` aponta para uma única referência do locutor. A recomendação oficial é manter a mesma referência em todo o dataset para melhorar consistência.
-
-    Escolhemos um trecho limpo como referência. Ouça o índice configurado e altere `REFERENCE_INDEX` se ele tiver ruído, hesitação ou transcrição incorreta. O tokenizer Qwen acrescentará `audio_codes`, a representação discreta utilizada como alvo de treinamento.
-
-    **Resultado esperado:** `train_raw.jsonl`, `train_with_codes.jsonl` e um arquivo compactado na área de armazenamento escolhida.
+    Ouça a referência abaixo. Se ela contiver hesitação ou ruído, mude `REFERENCE_INDEX` na configuração e reexecute esta célula.
     """
 )
 
 code(
     """
     if not 0 <= REFERENCE_INDEX < len(utterances):
-        raise IndexError("REFERENCE_INDEX não existe na lista de trechos.")
+        raise IndexError("REFERENCE_INDEX não existe.")
+
     reference = utterances[REFERENCE_INDEX]
-    reference_path = WORK_ROOT / "data" / "reference.wav"
+    reference_path = RUN_DIR / "data" / "reference.wav"
     shutil.copy2(reference["audio"], reference_path)
     reference_text = reference["text"]
-    (STORAGE_ROOT / "data" / "reference" / f"{RUN_ID}.txt").write_text(reference_text, encoding="utf-8")
-    shutil.copy2(reference_path, STORAGE_ROOT / "data" / "reference" / f"{RUN_ID}.wav")
+    (RUN_DIR / "data" / "reference.txt").write_text(reference_text, encoding="utf-8")
     print("Referência:", reference_text)
     display(Audio(filename=str(reference_path)))
 
-    train_raw = WORK_ROOT / "data" / "train_raw.jsonl"
+    train_raw = RUN_DIR / "data" / "train_raw.jsonl"
     with train_raw.open("w", encoding="utf-8") as handle:
         for item in utterances:
             row = {
@@ -498,17 +315,16 @@ code(
                 "ref_audio": str(reference_path.resolve()),
             }
             handle.write(json.dumps(row, ensure_ascii=False) + "\\n")
-    print("Manifesto bruto:", train_raw, "| linhas:", len(utterances))
+    print("Linhas no manifesto:", len(utterances))
     """
 )
 
 code(
     """
-    train_codes = WORK_ROOT / "data" / "train_with_codes.jsonl"
-    prepare_script = QWEN_REPO / "finetuning" / "prepare_data.py"
+    train_codes = RUN_DIR / "data" / "train_with_codes.jsonl"
     result = subprocess.run(
         [
-            sys.executable, str(prepare_script),
+            sys.executable, str(QWEN_REPO / "finetuning" / "prepare_data.py"),
             "--device", "cuda:0",
             "--tokenizer_model_path", "Qwen/Qwen3-TTS-Tokenizer-12Hz",
             "--input_jsonl", str(train_raw),
@@ -517,28 +333,20 @@ code(
         text=True,
     )
     if result.returncode != 0 or not train_codes.exists():
-        raise RuntimeError("A extração dos códigos acústicos falhou; consulte a saída acima.")
-
-    archive_base = WORK_ROOT / f"dataset_{RUN_ID}"
-    archive_path = Path(shutil.make_archive(str(archive_base), "gztar", root_dir=WORK_ROOT / "data"))
-    archive_store = STORAGE_ROOT / "data" / "processed" / archive_path.name
-    shutil.copy2(archive_path, archive_store)
-    print("Dataset tokenizado:", train_codes)
-    print("Backup compactado:", archive_store)
+        raise RuntimeError("Falha ao extrair audio_codes; consulte a saída acima.")
+    print("Dataset pronto:", train_codes)
     """
 )
 
 md(
     """
-    ## 10. Clonagem zero-shot: nossa linha de base
+    ## 3. Parte B — Clonagem zero-shot (`01_voice_cloning.ipynb`)
 
-    **Objetivo de aprendizagem:** estabelecer uma comparação antes de alterar o modelo.
+    ### 3.1 Carregar modelo, criar voice prompt e testar — original §§2–6
 
-    A clonagem zero-shot usa `reference.wav` e sua transcrição para gerar frases inéditas. Salvamos três amostras: uma declarativa, uma pergunta com números e uma frase expressiva. As mesmas frases serão usadas após o treinamento.
+    Esta é nossa linha de base antes do treino. O modelo recebe o WAV de referência e sua transcrição, cria um `voice_clone_prompt` e gera três frases inéditas. O original também demonstra presets, x-vector e histórias longas; eles foram omitidos porque não são necessários para avaliar o fine-tuning.
 
-    **Alerta:** o primeiro carregamento baixa vários gigabytes. Não confunda tempo de download com tempo de inferência.
-
-    **Resultado esperado:** três WAVs `zero_shot_*.wav` na pasta `samples` da execução.
+    O primeiro carregamento baixa vários gigabytes. A T4 usa 0.6B; GPUs maiores usam 1.7B.
     """
 )
 
@@ -555,301 +363,175 @@ code(
     MODEL_PATH = Path(snapshot_download(MODEL_ID, cache_dir="/content/huggingface-cache"))
     TORCH_DTYPE = torch.float16 if MIXED_PRECISION == "fp16" else torch.bfloat16
     base_model = Qwen3TTSModel.from_pretrained(
-        str(MODEL_PATH), device_map="cuda:0", dtype=TORCH_DTYPE, attn_implementation="sdpa"
+        str(MODEL_PATH), device_map="cuda:0",
+        dtype=TORCH_DTYPE, attn_implementation="sdpa",
     )
+    voice_prompt = base_model.create_voice_clone_prompt(
+        ref_audio=str(reference_path), ref_text=reference_text
+    )
+    """
+)
+
+code(
+    """
     for index, sentence in enumerate(TEST_SENTENCES, start=1):
         wavs, sr = base_model.generate_voice_clone(
-            text=sentence,
-            language=LANGUAGE,
-            ref_audio=str(reference_path),
-            ref_text=reference_text,
+            text=sentence, language=LANGUAGE, voice_clone_prompt=voice_prompt
         )
-        output = WORK_ROOT / "samples" / f"zero_shot_{index}.wav"
+        output = RUN_DIR / "samples" / f"zero_shot_{index}.wav"
         sf.write(output, wavs[0], sr)
-        shutil.copy2(output, RUN_STORE / "samples" / output.name)
         print(sentence)
         display(Audio(wavs[0], rate=sr))
-    del base_model
+
+    del base_model, voice_prompt
+    gc.collect()
     torch.cuda.empty_cache()
     """
 )
 
 md(
     """
-    ## 11. Fine-tuning single-speaker
+    ## 4. Parte C — Fine-tuning e teste (`03_finetune.ipynb`)
 
-    **Objetivo de aprendizagem:** executar o treinamento e interpretar seus principais controles.
+    ### 4.1 Preparar e treinar — original §2
 
-    O script oficial combina a perda do primeiro codebook com a perda dos codebooks auxiliares. `batch_size` controla quantos exemplos são processados juntos; a acumulação de gradiente simula um batch maior. Cada época percorre o corpus inteiro.
+    O script oficial assume BF16 e FlashAttention. Para também funcionar em T4, fazemos somente duas alterações: escolhemos FP16/BF16 pela GPU e usamos `sdpa`. O modelo-base já foi baixado localmente, evitando o problema do script ao copiar um identificador remoto.
 
-    Criamos uma cópia adaptada do script oficial somente dentro de `/content`: BF16/FP16 é escolhido pela GPU, `sdpa` substitui FlashAttention e cada checkpoint completo é copiado para a pasta da execução. No modo `upload`, ele continuará sendo temporário até você baixar o pacote final.
-
-    **Retomada:** se uma sessão cair, defina `RUN_ID_OVERRIDE` na seção 4 e `RESUME_CHECKPOINT` abaixo. A rotina recompõe o `speaker_encoder` que o checkpoint final omite por projeto.
-
-    **Resultado esperado:** logs de perda e pelo menos um `checkpoint-epoch-N` na pasta da execução.
+    Esta célula de compatibilidade fica recolhida. Se o Qwen alterar o script oficial, ela interrompe com uma mensagem em vez de aplicar um patch incorreto.
     """
 )
 
 code(
     """
-    # Deixe vazio em um treino novo. Exemplo para retomada: "checkpoint-epoch-1"
-    RESUME_CHECKPOINT = ""
+    finetuning_dir = RUN_DIR / "qwen_finetuning"
+    shutil.copytree(QWEN_REPO / "finetuning", finetuning_dir, dirs_exist_ok=True)
+    train_script = finetuning_dir / "sft_12hz.py"
+    source = train_script.read_text(encoding="utf-8")
 
-    ft_dir = WORK_ROOT / "finetuning"
-    shutil.copytree(QWEN_REPO / "finetuning", ft_dir, dirs_exist_ok=True)
-    adaptive_script = ft_dir / "sft_12hz.py"
-    source = adaptive_script.read_text(encoding="utf-8")
-
-    replacements = {
+    patches = {
         'accelerator = Accelerator(gradient_accumulation_steps=4, mixed_precision="bf16", log_with="tensorboard")':
             'precision = os.environ.get("QWEN_MIXED_PRECISION", "bf16")\\n    accelerator = Accelerator(gradient_accumulation_steps=4, mixed_precision=precision, log_with="tensorboard")',
         'torch_dtype=torch.bfloat16,\\n        attn_implementation="flash_attention_2",':
             'torch_dtype=torch.bfloat16 if precision == "bf16" else torch.float16,\\n        attn_implementation="sdpa",',
     }
-    for old, new in replacements.items():
+    for old, new in patches.items():
         if old not in source:
-            raise RuntimeError("O script oficial mudou e o patch adaptativo precisa ser revisado.")
+            raise RuntimeError("O script oficial mudou; revise o patch de compatibilidade.")
         source = source.replace(old, new, 1)
-
-    save_marker = "            save_file(state_dict, save_path)"
-    sync_block = "\\n".join([
-        "            save_file(state_dict, save_path)",
-        "            sync_root = os.environ.get('QWEN_SYNC_DIR')",
-        "            if sync_root:",
-        "                os.makedirs(sync_root, exist_ok=True)",
-        "                sync_target = os.path.join(sync_root, os.path.basename(output_dir))",
-        "                shutil.copytree(output_dir, sync_target, dirs_exist_ok=True)",
-        "                keep = int(os.environ.get('QWEN_KEEP_CHECKPOINTS', '2'))",
-        "                completed = sorted(",
-        "                    [name for name in os.listdir(sync_root) if name.startswith('checkpoint-epoch-')],",
-        "                    key=lambda name: int(name.rsplit('-', 1)[-1]),",
-        "                )",
-        "                for stale in completed[:-keep]:",
-        "                    shutil.rmtree(os.path.join(sync_root, stale))",
-        "                metrics_path = os.environ.get('QWEN_METRICS_PATH')",
-        "                if metrics_path and os.path.exists(metrics_path):",
-        "                    shutil.copy2(metrics_path, os.path.join(os.path.dirname(sync_root), 'metrics.jsonl'))",
-    ])
-    if save_marker not in source:
-        raise RuntimeError("Ponto de sincronização não encontrado no script oficial.")
-    source = source.replace(save_marker, sync_block, 1)
-
-    print_marker = '                accelerator.print(f"Epoch {epoch} | Step {step} | Loss: {loss.item():.4f}")'
-    metrics_block = print_marker + "\\n" + "\\n".join([
-        "                metrics_path = os.environ.get('QWEN_METRICS_PATH')",
-        "                if accelerator.is_main_process and metrics_path:",
-        "                    with open(metrics_path, 'a', encoding='utf-8') as metrics_file:",
-        "                        metrics_file.write(json.dumps({'epoch': epoch, 'step': step, 'loss': loss.item()}) + '\\\\n')",
-    ])
-    if print_marker not in source:
-        raise RuntimeError("Ponto de métricas não encontrado no script oficial.")
-    source = source.replace(print_marker, metrics_block, 1)
-    adaptive_script.write_text(source, encoding="utf-8")
-    print("Script adaptativo criado em:", adaptive_script)
-    """
+    train_script.write_text(source, encoding="utf-8")
+    print("Script de treino preparado:", train_script)
+    """,
+    compact=True,
 )
 
 code(
     """
-    from safetensors import safe_open
-    from safetensors.torch import load_file, save_file
-
-    INIT_MODEL_PATH = MODEL_PATH
-    if RESUME_CHECKPOINT:
-        saved_checkpoint = RUN_STORE / "checkpoints" / RESUME_CHECKPOINT
-        if not saved_checkpoint.exists():
-            raise FileNotFoundError(f"Checkpoint de retomada não encontrado: {saved_checkpoint}")
-        resume_dir = WORK_ROOT / "resume" / RESUME_CHECKPOINT
-        shutil.copytree(saved_checkpoint, resume_dir, dirs_exist_ok=True)
-        shutil.copy2(MODEL_PATH / "config.json", resume_dir / "config.json")
-        resumed_state = load_file(resume_dir / "model.safetensors", device="cpu")
-        with safe_open(MODEL_PATH / "model.safetensors", framework="pt", device="cpu") as base_weights:
-            for key in base_weights.keys():
-                if key.startswith("speaker_encoder"):
-                    resumed_state[key] = base_weights.get_tensor(key)
-        save_file(resumed_state, resume_dir / "model.safetensors")
-        del resumed_state
-        INIT_MODEL_PATH = resume_dir
-        print("Checkpoint recomposto para retomada:", INIT_MODEL_PATH)
-    else:
-        print("Treino novo a partir de:", INIT_MODEL_PATH)
-    """
-)
-
-code(
-    """
-    metrics_local = WORK_ROOT / "metrics.jsonl"
-    train_log = WORK_ROOT / "train.log"
+    train_log = RUN_DIR / "train.log"
     env = os.environ.copy()
-    env.update({
-        "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
-        "QWEN_MIXED_PRECISION": MIXED_PRECISION,
-        "QWEN_SYNC_DIR": str(RUN_STORE / "checkpoints"),
-        "QWEN_KEEP_CHECKPOINTS": str(KEEP_CHECKPOINTS),
-        "QWEN_METRICS_PATH": str(metrics_local),
-    })
+    env["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+    env["QWEN_MIXED_PRECISION"] = MIXED_PRECISION
     command = [
-        sys.executable, str(adaptive_script),
-        "--init_model_path", str(INIT_MODEL_PATH),
-        "--output_model_path", str(WORK_ROOT / "checkpoints"),
+        sys.executable, str(train_script),
+        "--init_model_path", str(MODEL_PATH),
+        "--output_model_path", str(RUN_DIR / "checkpoints"),
         "--train_jsonl", str(train_codes),
         "--batch_size", str(BATCH_SIZE),
         "--lr", str(LEARNING_RATE),
         "--num_epochs", str(NUM_EPOCHS),
         "--speaker_name", SPEAKER_NAME,
     ]
-    print("Iniciando treino. Esta é a etapa mais demorada do notebook.")
+
+    print("Iniciando a etapa mais demorada do notebook.")
     with train_log.open("w", encoding="utf-8") as log_handle:
         process = subprocess.Popen(
-            command, cwd=ft_dir, env=env, stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, text=True, bufsize=1,
+            command, cwd=finetuning_dir, env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1,
         )
         for line in process.stdout:
             print(line, end="")
             log_handle.write(line)
         return_code = process.wait()
-    shutil.copy2(train_log, RUN_STORE / "train.log")
     if return_code != 0:
-        raise RuntimeError("O treinamento terminou com erro. Consulte train.log na pasta da execução.")
-    print("Treinamento concluído. Checkpoints:", sorted((RUN_STORE / "checkpoints").glob("checkpoint-*")))
+        raise RuntimeError("Treinamento falhou. Consulte train.log.")
+
+    checkpoints = sorted(
+        (RUN_DIR / "checkpoints").glob("checkpoint-epoch-*"),
+        key=lambda path: int(path.name.rsplit("-", 1)[-1]),
+    )
+    for stale in checkpoints[:-2]:
+        shutil.rmtree(stale)
+    checkpoints = checkpoints[-2:]
+    print("Checkpoints mantidos:", [path.name for path in checkpoints])
     """
 )
 
 md(
     """
-    ## 12. Avaliação: zero-shot versus modelo treinado
+    ### 4.2 Carregar o checkpoint e comparar — original §3
 
-    **Objetivo de aprendizagem:** avaliar identidade, inteligibilidade, naturalidade e estabilidade sem usar frases do corpus.
+    O checkpoint treinado funciona como `CustomVoice`: informamos o nome do locutor em vez de um áudio de referência. Geraremos as mesmas frases do zero-shot. Compare identidade, inteligibilidade, naturalidade e estabilidade; perda menor no treino não garante som melhor.
 
-    O checkpoint mais recente é carregado como `CustomVoice`. Geramos exatamente as mesmas frases da linha de base. Uma melhora de identidade acompanhada de piora na pronúncia pode indicar sobreajuste; áudio acelerado ou instável entre épocas também é um sinal de alerta.
-
-    A avaliação auditiva não é uma métrica perfeita, mas um formulário consistente permite comparar experimentos. Preencha notas de 1 a 5 no CSV criado ao final.
-
-    **Resultado esperado:** pares de áudio comparáveis e uma planilha de avaliação na pasta da execução.
+    O original ainda sintetiza uma história completa e publica no Hugging Face. Essas etapas ficam fora deste primeiro experimento para manter o foco na comparação.
     """
 )
 
 code(
     """
-    checkpoints = sorted(
-        (RUN_STORE / "checkpoints").glob("checkpoint-epoch-*"),
-        key=lambda path: int(path.name.rsplit("-", 1)[-1]),
-    )
     if not checkpoints:
-        raise FileNotFoundError("Nenhum checkpoint completo foi encontrado na pasta da execução.")
-    selected_stored_checkpoint = checkpoints[-1]
-    selected_local_checkpoint = WORK_ROOT / "evaluation" / selected_stored_checkpoint.name
-    shutil.copytree(selected_stored_checkpoint, selected_local_checkpoint, dirs_exist_ok=True)
-
+        raise FileNotFoundError("Nenhum checkpoint foi criado.")
+    selected_checkpoint = checkpoints[-1]
     fine_tuned_model = Qwen3TTSModel.from_pretrained(
-        str(selected_local_checkpoint),
-        device_map="cuda:0",
-        dtype=TORCH_DTYPE,
-        attn_implementation="sdpa",
+        str(selected_checkpoint), device_map="cuda:0",
+        dtype=TORCH_DTYPE, attn_implementation="sdpa",
     )
+
     for index, sentence in enumerate(TEST_SENTENCES, start=1):
         wavs, sr = fine_tuned_model.generate_custom_voice(
             text=sentence, language=LANGUAGE, speaker=SPEAKER_NAME
         )
-        output = WORK_ROOT / "samples" / f"fine_tuned_{index}.wav"
+        output = RUN_DIR / "samples" / f"fine_tuned_{index}.wav"
         sf.write(output, wavs[0], sr)
-        shutil.copy2(output, RUN_STORE / "samples" / output.name)
         print(f"Frase {index} — zero-shot")
-        display(Audio(filename=str(RUN_STORE / "samples" / f"zero_shot_{index}.wav")))
+        display(Audio(filename=str(RUN_DIR / "samples" / f"zero_shot_{index}.wav")))
         print(f"Frase {index} — fine-tuned")
         display(Audio(wavs[0], rate=sr))
+
     del fine_tuned_model
-    torch.cuda.empty_cache()
-    """
-)
-
-code(
-    """
-    import csv
-
-    evaluation_csv = RUN_STORE / "avaliacao_auditiva.csv"
-    with evaluation_csv.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(
-            handle,
-            fieldnames=["sistema", "frase", "identidade_1a5", "inteligibilidade_1a5",
-                        "naturalidade_1a5", "estabilidade_1a5", "observacoes"],
-        )
-        writer.writeheader()
-        for system_name in ["zero_shot", "fine_tuned"]:
-            for index in range(1, len(TEST_SENTENCES) + 1):
-                writer.writerow({"sistema": system_name, "frase": index})
-    print("Formulário de avaliação criado em:", evaluation_csv)
-    """
-)
-
-md(
-    """
-    ## 13. Conclusões e próximos experimentos
-
-    **Objetivo de aprendizagem:** transformar observações em uma próxima hipótese testável.
-
-    Compare as notas e o `metrics.jsonl`. Perda menor não garante voz melhor: com apenas 5–10 minutos, muitas épocas podem memorizar o corpus e reduzir a capacidade de pronunciar frases novas. Escute especialmente números, perguntas e palavras ausentes da gravação.
-
-    Próximos experimentos recomendados, um por vez:
-
-    1. corrigir transcrições antes de mudar hiperparâmetros;
-    2. ampliar o corpus para 20–30 minutos mantendo o mesmo ambiente;
-    3. comparar checkpoints anteriores, não apenas o último;
-    4. reduzir épocas ou learning rate se houver fala acelerada, artefatos ou perda de inteligibilidade;
-    5. repetir as mesmas frases e o mesmo formulário para preservar comparabilidade.
-
-    **Conclusão produzida:** a pasta da execução contém configuração, revisão do Qwen, métricas, logs, checkpoints e amostras suficientes para reproduzir e analisar o experimento.
-    """
-)
-
-md(
-    """
-    ## 14. Limpeza, espaço e encerramento
-
-    **Objetivo de aprendizagem:** distinguir o que pode ser descartado do que precisa ser preservado.
-
-    Modelos em memória ocupam VRAM; arquivos em `/content` ocupam o disco temporário. A célula libera objetos Python, empacota a execução sem recomprimir os pesos e inicia o download para o Mac no modo `upload`. Não feche a aba antes de o download terminar. Se o navegador bloquear um pacote grande, localize-o em `FineTunning-storage/exports` no painel lateral, abra o menu do arquivo e escolha **Fazer download**.
-
-    Os dois checkpoints recentes entram no pacote em `runs/<run_id>/checkpoints`. O dataset compactado fica em `data/processed`, e os WAVs comparativos em `samples`.
-
-    **Resultado esperado:** memória CUDA liberada e um resumo final de localização e tamanho.
-    """
-)
-
-code(
-    """
-    import gc
-
-    BAIXAR_PACOTE_COMPLETO = True
-    APAGAR_AREA_TEMPORARIA = False
     gc.collect()
     torch.cuda.empty_cache()
+    """
+)
 
-    persistent_bytes = sum(
-        path.stat().st_size for path in RUN_STORE.rglob("*") if path.is_file()
+md(
+    """
+    ## 5. Exportar os resultados para o Mac
+
+    O disco `/content` é temporário. Esta célula empacota configuração, áudio processado, logs, amostras e os dois checkpoints recentes em um `.tar` sem tentar recomprimir os pesos. Aguarde o download terminar antes de fechar a sessão.
+
+    Se o navegador bloquear um arquivo grande, encontre `/content/<run_id>.tar` no painel **Arquivos**, abra seu menu e escolha **Fazer download**.
+    """
+)
+
+code(
+    """
+    export_path = Path("/content") / f"{RUN_ID}.tar"
+    subprocess.run(
+        ["tar", "-cf", str(export_path), "-C", str(RUN_DIR.parent), RUN_DIR.name],
+        check=True,
     )
-    print(f"Execução armazenada em: {RUN_STORE}")
-    print(f"Tamanho da execução: {persistent_bytes / 1024**3:.2f} GB")
-    print(f"Dataset compactado: {archive_store}")
-    print(f"Avaliação: {evaluation_csv}")
+    print(f"Pacote: {export_path} | {export_path.stat().st_size / 1024**3:.2f} GB")
+    files.download(str(export_path))
+    """
+)
 
-    if STORAGE_MODE == "upload" and BAIXAR_PACOTE_COMPLETO:
-        export_path = STORAGE_ROOT / "exports" / f"{RUN_ID}.tar"
-        subprocess.run(
-            ["tar", "-cf", str(export_path), "-C", str(STORAGE_ROOT),
-             "runs/" + RUN_ID, "data/reference", "data/processed"],
-            check=True,
-        )
-        print(f"Pacote pronto ({export_path.stat().st_size / 1024**3:.2f} GB): {export_path}")
-        print("O navegador iniciará o download. Aguarde a conclusão antes de fechar o Colab.")
-        files.download(str(export_path))
+md(
+    """
+    ## Apêndice — retomada de uma execução interrompida
 
-    if APAGAR_AREA_TEMPORARIA:
-        if str(WORK_ROOT).startswith("/content/FineTunning-work/") and WORK_ROOT.exists():
-            shutil.rmtree(WORK_ROOT)
-            print("Área temporária removida.")
-    else:
-        print("Área temporária preservada. Ela desaparecerá quando a sessão Colab terminar.")
+    A retomada não faz parte do primeiro fluxo porque adiciona complexidade e o otimizador oficial não é salvo. Um checkpoint concluído pode ser reutilizado, mas é necessário restaurar o `speaker_encoder` do modelo-base e reiniciar o otimizador. Isso não equivale exatamente a continuar do mesmo passo.
+
+    Para um primeiro corpus de 5–10 minutos, prefira concluir poucas épocas em uma única sessão e baixar o pacote final. Quando o fluxo básico estiver validado, a retomada pode ser adicionada como um notebook avançado separado.
     """
 )
 
