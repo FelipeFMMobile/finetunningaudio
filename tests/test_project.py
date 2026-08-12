@@ -54,6 +54,8 @@ def test_notebook_targets_colab_gpu_and_local_transfer() -> None:
     assert 'find_spec("qwen_tts")' in source
     assert '"-e", str(QWEN_REPO)' not in source
     assert '"sox", "libsox-fmt-all"' in source
+    assert 'MODEL_SIZE, MIXED_PRECISION, BATCH_SIZE = "0.6B", "no", 1' in source
+    assert '"no": torch.float32' in source
 
 
 def test_recording_script_has_expected_size_and_segments() -> None:

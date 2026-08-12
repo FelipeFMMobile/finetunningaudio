@@ -48,7 +48,7 @@ A ordem de execução começa pela preparação dos dados porque o áudio usado 
 
 | GPU detectada | Modelo | Precisão | Batch inicial |
 |---|---|---|---|
-| T4, 16 GB | Qwen3-TTS 0.6B | FP16 | 1 |
+| T4, 16 GB | Qwen3-TTS 0.6B | FP32 | 1 |
 | L4, 24 GB | Qwen3-TTS 1.7B | BF16 | 2 |
 | A100 ou melhor | Qwen3-TTS 1.7B | BF16 | 4 |
 

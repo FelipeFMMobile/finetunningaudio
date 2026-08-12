@@ -57,7 +57,7 @@ md(
     """
     ## 1. Preparação do Colab — equivalente ao “Setup” dos três notebooks
 
-    O navegador está no seu Mac, mas o código roda em uma máquina virtual do Google. Selecione **Ambiente de execução → Alterar tipo de ambiente de execução → GPU**. Uma T4 usará o Qwen3-TTS 0.6B em FP16; L4 e A100 usarão o 1.7B em BF16.
+    O navegador está no seu Mac, mas o código roda em uma máquina virtual do Google. Selecione **Ambiente de execução → Alterar tipo de ambiente de execução → GPU**. Uma T4 usará o Qwen3-TTS 0.6B em FP32, pois FP16 é numericamente instável nessa GPU; L4 e A100 usarão o 1.7B em BF16.
 
     A primeira célula valida CUDA. A segunda instala `ffmpeg`, Whisper e o Qwen3-TTS oficial. Ela fica recolhida como formulário porque é infraestrutura, não a parte central do aprendizado.
     """
@@ -157,7 +157,7 @@ code(
 
     gpu_upper = GPU_NAME.upper()
     if "T4" in gpu_upper or GPU_MEMORY_GB < 20:
-        MODEL_SIZE, MIXED_PRECISION, BATCH_SIZE = "0.6B", "fp16", 1
+        MODEL_SIZE, MIXED_PRECISION, BATCH_SIZE = "0.6B", "no", 1
     elif "L4" in gpu_upper or GPU_MEMORY_GB < 40:
         MODEL_SIZE, MIXED_PRECISION, BATCH_SIZE = "1.7B", "bf16", 2
     else:
@@ -376,7 +376,11 @@ code(
         "Que resultado incrível! Finalmente conseguimos concluir o experimento com sucesso.",
     ]
     MODEL_PATH = Path(snapshot_download(MODEL_ID, cache_dir="/content/huggingface-cache"))
-    TORCH_DTYPE = torch.float16 if MIXED_PRECISION == "fp16" else torch.bfloat16
+    TORCH_DTYPE = {
+        "no": torch.float32,
+        "fp16": torch.float16,
+        "bf16": torch.bfloat16,
+    }[MIXED_PRECISION]
     base_model = Qwen3TTSModel.from_pretrained(
         str(MODEL_PATH), device_map="cuda:0",
         dtype=TORCH_DTYPE, attn_implementation="sdpa",
@@ -410,7 +414,7 @@ md(
 
     ### 4.1 Preparar e treinar — original §2
 
-    O script oficial assume BF16 e FlashAttention. Para também funcionar em T4, fazemos somente duas alterações: escolhemos FP16/BF16 pela GPU e usamos `sdpa`. O modelo-base já foi baixado localmente, evitando o problema do script ao copiar um identificador remoto.
+    O script oficial assume BF16 e FlashAttention. Para também funcionar em T4, fazemos somente duas alterações: escolhemos FP32/BF16 pela GPU e usamos `sdpa`. O modelo-base já foi baixado localmente, evitando o problema do script ao copiar um identificador remoto.
 
     Esta célula de compatibilidade fica recolhida. Se o Qwen alterar o script oficial, ela interrompe com uma mensagem em vez de aplicar um patch incorreto.
     """
@@ -425,9 +429,9 @@ code(
 
     patches = {
         'accelerator = Accelerator(gradient_accumulation_steps=4, mixed_precision="bf16", log_with="tensorboard")':
-            'precision = os.environ.get("QWEN_MIXED_PRECISION", "bf16")\\n    accelerator = Accelerator(gradient_accumulation_steps=4, mixed_precision=precision, log_with="tensorboard")',
+            'precision = os.environ.get("QWEN_MIXED_PRECISION", "bf16")\\n    model_dtype = torch.bfloat16 if precision == "bf16" else (torch.float16 if precision == "fp16" else torch.float32)\\n    accelerator = Accelerator(gradient_accumulation_steps=4, mixed_precision=precision, log_with="tensorboard")',
         'torch_dtype=torch.bfloat16,\\n        attn_implementation="flash_attention_2",':
-            'torch_dtype=torch.bfloat16 if precision == "bf16" else torch.float16,\\n        attn_implementation="sdpa",',
+            'torch_dtype=model_dtype,\\n        attn_implementation="sdpa",',
     }
     for old, new in patches.items():
         if old not in source:
