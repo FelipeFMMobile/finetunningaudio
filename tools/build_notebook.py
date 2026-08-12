@@ -101,7 +101,10 @@ code(
         )
 
     subprocess.run(["apt-get", "update", "-qq"], check=True)
-    subprocess.run(["apt-get", "install", "-y", "-qq", "ffmpeg"], check=True)
+    subprocess.run(
+        ["apt-get", "install", "-y", "-qq", "ffmpeg", "sox", "libsox-fmt-all"],
+        check=True,
+    )
     subprocess.run(
         [
             sys.executable, "-m", "pip", "install", "-q", "--upgrade", str(QWEN_REPO),
