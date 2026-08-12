@@ -55,6 +55,8 @@ def test_notebook_targets_colab_gpu_and_local_transfer() -> None:
     assert '"-e", str(QWEN_REPO)' not in source
     assert '"sox", "libsox-fmt-all"' in source
     assert 'MODEL_SIZE, MIXED_PRECISION, BATCH_SIZE = "0.6B", "no", 1' in source
+    assert 'project_dir=logging_dir' in source
+    assert 'env["QWEN_LOGGING_DIR"] = str(RUN_DIR / "logs")' in source
     assert '"no": torch.float32' in source
 
 

@@ -414,7 +414,7 @@ md(
 
     ### 4.1 Preparar e treinar — original §2
 
-    O script oficial assume BF16 e FlashAttention. Para também funcionar em T4, fazemos somente duas alterações: escolhemos FP32/BF16 pela GPU e usamos `sdpa`. O modelo-base já foi baixado localmente, evitando o problema do script ao copiar um identificador remoto.
+    O script oficial assume BF16 e FlashAttention. Para também funcionar em T4, fazemos três ajustes de compatibilidade: escolhemos FP32/BF16 pela GPU, usamos `sdpa` e informamos ao Accelerate onde o TensorBoard deve gravar seus logs. O modelo-base já foi baixado localmente, evitando o problema do script ao copiar um identificador remoto.
 
     Esta célula de compatibilidade fica recolhida. Se o Qwen alterar o script oficial, ela interrompe com uma mensagem em vez de aplicar um patch incorreto.
     """
@@ -429,7 +429,7 @@ code(
 
     patches = {
         'accelerator = Accelerator(gradient_accumulation_steps=4, mixed_precision="bf16", log_with="tensorboard")':
-            'precision = os.environ.get("QWEN_MIXED_PRECISION", "bf16")\\n    model_dtype = torch.bfloat16 if precision == "bf16" else (torch.float16 if precision == "fp16" else torch.float32)\\n    accelerator = Accelerator(gradient_accumulation_steps=4, mixed_precision=precision, log_with="tensorboard")',
+            'precision = os.environ.get("QWEN_MIXED_PRECISION", "bf16")\\n    model_dtype = torch.bfloat16 if precision == "bf16" else (torch.float16 if precision == "fp16" else torch.float32)\\n    logging_dir = os.environ.get("QWEN_LOGGING_DIR", "./logs")\\n    os.makedirs(logging_dir, exist_ok=True)\\n    accelerator = Accelerator(gradient_accumulation_steps=4, mixed_precision=precision, log_with="tensorboard", project_dir=logging_dir)',
         'torch_dtype=torch.bfloat16,\\n        attn_implementation="flash_attention_2",':
             'torch_dtype=model_dtype,\\n        attn_implementation="sdpa",',
     }
@@ -449,6 +449,7 @@ code(
     env = os.environ.copy()
     env["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
     env["QWEN_MIXED_PRECISION"] = MIXED_PRECISION
+    env["QWEN_LOGGING_DIR"] = str(RUN_DIR / "logs")
     command = [
         sys.executable, str(train_script),
         "--init_model_path", str(MODEL_PATH),
