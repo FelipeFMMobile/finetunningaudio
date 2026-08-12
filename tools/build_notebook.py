@@ -66,6 +66,8 @@ md(
 code(
     """
     import gc
+    import importlib
+    import importlib.util
     import json
     import os
     import random
@@ -102,7 +104,7 @@ code(
     subprocess.run(["apt-get", "install", "-y", "-qq", "ffmpeg"], check=True)
     subprocess.run(
         [
-            sys.executable, "-m", "pip", "install", "-q", "-e", str(QWEN_REPO),
+            sys.executable, "-m", "pip", "install", "-q", "--upgrade", str(QWEN_REPO),
             "openai-whisper", "pydub", "soundfile", "accelerate",
             "tensorboard", "huggingface_hub", "safetensors",
         ],
@@ -111,7 +113,17 @@ code(
     QWEN_COMMIT = subprocess.check_output(
         ["git", "-C", str(QWEN_REPO), "rev-parse", "HEAD"], text=True
     ).strip()
+    importlib.invalidate_caches()
+    if importlib.util.find_spec("qwen_tts") is None:
+        raise RuntimeError(
+            "qwen_tts não ficou disponível no kernel. Reinicie a sessão e execute "
+            "as células desde o início."
+        )
+    from qwen_tts import Qwen3TTSModel as _Qwen3TTSModel
+
     print("Qwen3-TTS preparado no commit:", QWEN_COMMIT)
+    print("Import qwen_tts validado no kernel atual.")
+    del _Qwen3TTSModel
     """,
     compact=True,
 )

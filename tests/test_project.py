@@ -51,6 +51,8 @@ def test_notebook_targets_colab_gpu_and_local_transfer() -> None:
     assert "Qwen3-TTS-12Hz-{MODEL_SIZE}-Base" in source
     assert '"QWEN_SYNC_DIR"' not in source
     assert "avaliacao_auditiva.csv" not in source
+    assert 'find_spec("qwen_tts")' in source
+    assert '"-e", str(QWEN_REPO)' not in source
 
 
 def test_recording_script_has_expected_size_and_segments() -> None:
