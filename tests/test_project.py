@@ -58,6 +58,8 @@ def test_notebook_targets_colab_gpu_and_local_transfer() -> None:
     assert 'project_dir=logging_dir' in source
     assert 'env["QWEN_LOGGING_DIR"] = str(RUN_DIR / "logs")' in source
     assert '"no": torch.float32' in source
+    assert 'model.talker.text_projection(input_text_embedding)' in source
+    assert 'dtype=model_dtype' in source
 
 
 def test_recording_script_has_expected_size_and_segments() -> None:
