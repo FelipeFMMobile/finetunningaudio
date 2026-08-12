@@ -60,6 +60,8 @@ def test_notebook_targets_colab_gpu_and_local_transfer() -> None:
     assert '"no": torch.float32' in source
     assert 'model.talker.text_projection(input_text_embedding)' in source
     assert 'dtype=model_dtype' in source
+    assert 'foreach=False if low_memory else None' in source
+    assert 'env["QWEN_LOW_MEMORY"] = "1" if GPU_MEMORY_GB < 20 else "0"' in source
 
 
 def test_recording_script_has_expected_size_and_segments() -> None:

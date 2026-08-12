@@ -414,7 +414,7 @@ md(
 
     ### 4.1 Preparar e treinar — original §2
 
-    O script oficial assume BF16 e FlashAttention. Para também funcionar em T4, fazemos ajustes de compatibilidade: escolhemos FP32/BF16 pela GPU, usamos `sdpa`, informamos ao Accelerate onde o TensorBoard deve gravar seus logs e aplicamos a projeção de texto exigida pelo modelo 0.6B. O modelo-base já foi baixado localmente, evitando o problema do script ao copiar um identificador remoto.
+    O script oficial assume BF16 e FlashAttention. Para também funcionar em T4, fazemos ajustes de compatibilidade: escolhemos FP32/BF16 pela GPU, usamos `sdpa`, informamos ao Accelerate onde o TensorBoard deve gravar seus logs, aplicamos a projeção de texto exigida pelo modelo 0.6B e desativamos o modo `foreach` do AdamW em GPUs com menos de 20 GB para reduzir o pico de memória. O modelo-base já foi baixado localmente, evitando o problema do script ao copiar um identificador remoto.
 
     Esta célula de compatibilidade fica recolhida. Se o Qwen alterar o script oficial, ela interrompe com uma mensagem em vez de aplicar um patch incorreto.
     """
@@ -434,6 +434,8 @@ code(
             'dtype=model_dtype,\\n        attn_implementation="sdpa",',
         'input_text_embedding = model.talker.model.text_embedding(input_text_ids) * text_embedding_mask':
             'input_text_embedding = model.talker.model.text_embedding(input_text_ids)\\n                input_text_embedding = model.talker.text_projection(input_text_embedding)\\n                input_text_embedding = input_text_embedding * text_embedding_mask',
+        'optimizer = AdamW(qwen3tts.model.parameters(), lr=args.lr, weight_decay=0.01)':
+            'low_memory = os.environ.get("QWEN_LOW_MEMORY", "0") == "1"\\n    optimizer = AdamW(qwen3tts.model.parameters(), lr=args.lr, weight_decay=0.01, foreach=False if low_memory else None)',
     }
     for old, new in patches.items():
         if old not in source:
@@ -452,6 +454,7 @@ code(
     env["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
     env["QWEN_MIXED_PRECISION"] = MIXED_PRECISION
     env["QWEN_LOGGING_DIR"] = str(RUN_DIR / "logs")
+    env["QWEN_LOW_MEMORY"] = "1" if GPU_MEMORY_GB < 20 else "0"
     command = [
         sys.executable, str(train_script),
         "--init_model_path", str(MODEL_PATH),
