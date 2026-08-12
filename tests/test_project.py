@@ -62,6 +62,12 @@ def test_notebook_targets_colab_gpu_and_local_transfer() -> None:
     assert 'dtype=model_dtype' in source
     assert 'foreach=False if low_memory else None' in source
     assert 'env["QWEN_LOW_MEMORY"] = "1" if GPU_MEMORY_GB < 20 else "0"' in source
+    assert 'INPUT_MODE = "raw"' in source
+    assert 'INPUT_MODE == "prepared"' in source
+    assert 'TRAINING_SUPPORTED = False' in source
+    assert "Fine-tuning completo bloqueado nesta GPU" in source
+    assert "_dataset_preparado.tar.gz" in source
+    assert 'archive.extractall(RUN_DIR, filter="data")' in source
 
 
 def test_recording_script_has_expected_size_and_segments() -> None:

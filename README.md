@@ -15,8 +15,9 @@ Como o repositório é privado, abra o notebook pelo seletor **Arquivo → Abrir
 1. Leia o [guia de gravação](docs/GUIA_GRAVACAO.md).
 2. Grave o texto de [`scripts/roteiro_gravacao_ptbr.txt`](scripts/roteiro_gravacao_ptbr.txt) em um único WAV.
 3. Abra o notebook no Colab e escolha **Ambiente de execução → Alterar tipo de ambiente de execução → GPU**.
-4. Execute as células em ordem. Quando solicitado, escolha `voz_ptbr.wav` no seletor de arquivos do navegador.
-5. Ao final, aguarde o download do pacote `<run_id>.tar` antes de fechar a sessão.
+4. Em T4, use `INPUT_MODE = "raw"`, prepare os dados e baixe `*_dataset_preparado.tar.gz` na seção 2.4.
+5. Abra uma sessão L4/A100, use `INPUT_MODE = "prepared"`, envie o pacote e continue no zero-shot e fine-tuning.
+6. Ao final, aguarde o download do pacote `<run_id>.tar` antes de fechar a sessão.
 
 ## Organização dos artefatos
 
@@ -48,11 +49,11 @@ A ordem de execução começa pela preparação dos dados porque o áudio usado 
 
 | GPU detectada | Modelo | Precisão | Batch inicial |
 |---|---|---|---|
-| T4, 16 GB | Qwen3-TTS 0.6B | FP32 | 1 |
-| L4, 24 GB | Qwen3-TTS 1.7B | BF16 | 2 |
+| T4, 16 GB | Qwen3-TTS 0.6B | FP32 | preparação e zero-shot; treino bloqueado |
+| L4, 24 GB | Qwen3-TTS 1.7B | BF16 | 1 |
 | A100 ou melhor | Qwen3-TTS 1.7B | BF16 | 4 |
 
-A escolha pode ser sobrescrita na célula central de configuração. O Mac M1 Pro é adequado para editar e versionar o projeto, mas o treinamento oficial utilizado aqui requer uma GPU NVIDIA com CUDA.
+A T4 não possui memória suficiente para o fine-tuning completo em FP32: mesmo com batch 1, o AdamW não consegue manter modelo, gradientes e estados. Ela continua útil para preparar o corpus e gerar a linha de base zero-shot. O treinamento oficial utilizado aqui requer L4/A100; o Mac M1 Pro é adequado para editar e versionar o projeto.
 
 ## Validação local
 

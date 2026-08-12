@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import tarfile
 import textwrap
 from pathlib import Path
 
@@ -35,6 +36,16 @@ def code(source: str, *, compact: bool = False) -> None:
     )
 
 
+def raw_code(source: str) -> None:
+    """Cria uma célula executada apenas ao preparar uma gravação bruta."""
+    body = textwrap.indent(textwrap.dedent(source).strip(), "    ")
+    code(
+        'if INPUT_MODE == "prepared":\n'
+        '    print("Etapa ignorada: o pacote já contém os dados processados.")\n'
+        "else:\n" + body
+    )
+
+
 md(
     """
     <a href="https://colab.research.google.com/github/FelipeFMMobile/finetunningaudio/blob/main/notebooks/01_qwen3_tts_clone_finetuning.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Abrir no Colab"/></a>
@@ -57,7 +68,7 @@ md(
     """
     ## 1. Preparação do Colab — equivalente ao “Setup” dos três notebooks
 
-    O navegador está no seu Mac, mas o código roda em uma máquina virtual do Google. Selecione **Ambiente de execução → Alterar tipo de ambiente de execução → GPU**. Uma T4 usará o Qwen3-TTS 0.6B em FP32, pois FP16 é numericamente instável nessa GPU; L4 e A100 usarão o 1.7B em BF16.
+    O navegador está no seu Mac, mas o código roda em uma máquina virtual do Google. Selecione **Ambiente de execução → Alterar tipo de ambiente de execução → GPU**. A T4 pode preparar os dados e executar zero-shot com o Qwen3-TTS 0.6B em FP32, mas não possui memória suficiente para o fine-tuning completo. Para treinar, use L4 ou A100 com o 1.7B em BF16.
 
     A primeira célula valida CUDA. A segunda instala `ffmpeg`, Whisper e o Qwen3-TTS oficial. Ela fica recolhida como formulário porque é infraestrutura, não a parte central do aprendizado.
     """
@@ -74,6 +85,7 @@ code(
     import shutil
     import subprocess
     import sys
+    import tarfile
     from datetime import datetime, timezone
     from pathlib import Path
 
@@ -133,11 +145,11 @@ code(
 
 md(
     """
-    ### 1.1 Configuração e upload da gravação
+    ### 1.1 Configuração e entrada dos dados
 
-    O painel **Arquivos** do Colab mostra o disco remoto `/content`, não uma pasta do Mac. Ao executar esta célula, escolha `voz_ptbr.wav` no seletor. Tudo será armazenado temporariamente em `/content/FineTunning-storage/<run_id>` e baixado como um pacote ao final.
+    O painel **Arquivos** do Colab mostra o disco remoto `/content`, não uma pasta do Mac. Use `INPUT_MODE = "raw"` na primeira sessão para enviar `voz_ptbr.wav`. Depois de preparar os dados, baixe o pacote `*_dataset_preparado.tar.gz`. Em uma nova sessão L4/A100, use `INPUT_MODE = "prepared"` e envie esse pacote para pular segmentação, Whisper e tokenização.
 
-    As variáveis abaixo concentram as decisões do experimento. Para o primeiro teste, altere apenas `SPEAKER_NAME` se desejar.
+    As variáveis abaixo concentram as decisões do experimento. O conteúdo de `/content` é temporário; salve o pacote preparado antes de trocar o tipo de GPU.
     """
 )
 
@@ -146,7 +158,9 @@ code(
     from google.colab import files
 
     SPEAKER_NAME = "felipe"
+    INPUT_MODE = "raw"  # use "prepared" ao retomar em uma L4/A100
     RAW_AUDIO_FILENAME = "voz_ptbr.wav"
+    PREPARED_ARCHIVE_FILENAME = "dataset_preparado.tar.gz"
     LANGUAGE = "Portuguese"
     WHISPER_LANGUAGE = "pt"
     WHISPER_MODEL = "medium"
@@ -158,10 +172,13 @@ code(
     gpu_upper = GPU_NAME.upper()
     if "T4" in gpu_upper or GPU_MEMORY_GB < 20:
         MODEL_SIZE, MIXED_PRECISION, BATCH_SIZE = "0.6B", "no", 1
+        TRAINING_SUPPORTED = False
     elif "L4" in gpu_upper or GPU_MEMORY_GB < 40:
-        MODEL_SIZE, MIXED_PRECISION, BATCH_SIZE = "1.7B", "bf16", 2
+        MODEL_SIZE, MIXED_PRECISION, BATCH_SIZE = "1.7B", "bf16", 1
+        TRAINING_SUPPORTED = True
     else:
         MODEL_SIZE, MIXED_PRECISION, BATCH_SIZE = "1.7B", "bf16", 4
+        TRAINING_SUPPORTED = True
 
     MODEL_ID = f"Qwen/Qwen3-TTS-12Hz-{MODEL_SIZE}-Base"
     RUN_ID = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + f"_{SPEAKER_NAME}"
@@ -173,24 +190,60 @@ code(
     torch.manual_seed(RANDOM_SEED)
 
     raw_path = RUN_DIR / "data" / "raw" / RAW_AUDIO_FILENAME
-    sidebar_path = Path("/content") / RAW_AUDIO_FILENAME
-    if sidebar_path.exists():
-        shutil.copy2(sidebar_path, raw_path)
-    else:
-        print(f"Escolha {RAW_AUDIO_FILENAME} no seu Mac.")
+    if INPUT_MODE == "raw":
+        sidebar_path = Path("/content") / RAW_AUDIO_FILENAME
+        if sidebar_path.exists():
+            shutil.copy2(sidebar_path, raw_path)
+        else:
+            print(f"Escolha {RAW_AUDIO_FILENAME} no seu Mac.")
+            uploaded = files.upload()
+            if len(uploaded) != 1:
+                raise RuntimeError("Envie exatamente um arquivo WAV.")
+            uploaded_name, uploaded_bytes = next(iter(uploaded.items()))
+            if not uploaded_name.lower().endswith(".wav"):
+                raise ValueError("O arquivo precisa ter extensão .wav.")
+            raw_path.write_bytes(uploaded_bytes)
+    elif INPUT_MODE == "prepared":
+        print(f"Escolha o pacote {PREPARED_ARCHIVE_FILENAME} salvo na sessão anterior.")
         uploaded = files.upload()
         if len(uploaded) != 1:
-            raise RuntimeError("Envie exatamente um arquivo WAV.")
-        uploaded_name, uploaded_bytes = next(iter(uploaded.items()))
-        if not uploaded_name.lower().endswith(".wav"):
-            raise ValueError("O arquivo precisa ter extensão .wav.")
-        raw_path.write_bytes(uploaded_bytes)
+            raise RuntimeError("Envie exatamente um pacote .tar.gz.")
+        archive_name, archive_bytes = next(iter(uploaded.items()))
+        if not archive_name.endswith(".tar.gz"):
+            raise ValueError("O pacote precisa terminar em .tar.gz.")
+        archive_path = Path("/content") / archive_name
+        archive_path.write_bytes(archive_bytes)
+        with tarfile.open(archive_path, "r:gz") as archive:
+            archive.extractall(RUN_DIR, filter="data")
+    else:
+        raise ValueError('INPUT_MODE deve ser "raw" ou "prepared".')
+
+    train_raw = RUN_DIR / "data" / "train_raw.jsonl"
+    train_codes = RUN_DIR / "data" / "train_with_codes.jsonl"
+    reference_path = RUN_DIR / "data" / "reference.wav"
+    reference_text_path = RUN_DIR / "data" / "reference.txt"
+    if INPUT_MODE == "prepared":
+        required = [train_raw, train_codes, reference_path, reference_text_path]
+        missing = [str(path) for path in required if not path.exists()]
+        if missing:
+            raise FileNotFoundError(f"Pacote preparado incompleto: {missing}")
+        for manifest in [train_raw, train_codes]:
+            rewritten = []
+            for line in manifest.read_text(encoding="utf-8").splitlines():
+                row = json.loads(line)
+                row["audio"] = str((RUN_DIR / "data" / "chunks" / Path(row["audio"]).name).resolve())
+                row["ref_audio"] = str(reference_path.resolve())
+                rewritten.append(json.dumps(row, ensure_ascii=False))
+            manifest.write_text("\\n".join(rewritten) + "\\n", encoding="utf-8")
+        reference_text = reference_text_path.read_text(encoding="utf-8").strip()
+        print("Dataset processado restaurado:", train_codes)
 
     config = {
         "run_id": RUN_ID, "speaker_name": SPEAKER_NAME, "model_id": MODEL_ID,
         "gpu": GPU_NAME, "mixed_precision": MIXED_PRECISION,
         "batch_size": BATCH_SIZE, "learning_rate": LEARNING_RATE,
         "num_epochs": NUM_EPOCHS, "qwen_commit": QWEN_COMMIT,
+        "input_mode": INPUT_MODE, "training_supported": TRAINING_SUPPORTED,
     }
     (RUN_DIR / "config.json").write_text(
         json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -211,7 +264,7 @@ md(
     """
 )
 
-code(
+raw_code(
     """
     import numpy as np
     import soundfile as sf
@@ -263,7 +316,7 @@ md(
     """
 )
 
-code(
+raw_code(
     """
     import whisper
 
@@ -287,7 +340,7 @@ code(
     """
 )
 
-code(
+raw_code(
     """
     for index in random.sample(range(len(utterances)), min(10, len(utterances))):
         item = utterances[index]
@@ -308,7 +361,7 @@ md(
     """
 )
 
-code(
+raw_code(
     """
     if not 0 <= REFERENCE_INDEX < len(utterances):
         raise IndexError("REFERENCE_INDEX não existe.")
@@ -334,7 +387,7 @@ code(
     """
 )
 
-code(
+raw_code(
     """
     train_codes = RUN_DIR / "data" / "train_with_codes.jsonl"
     result = subprocess.run(
@@ -355,6 +408,29 @@ code(
 
 md(
     """
+    ### 2.4 Salvar o dataset antes de trocar a GPU
+
+    Esta célula compacta somente `data/`: WAVs segmentados, referência e manifestos. Baixe o arquivo antes de encerrar a T4. Na nova sessão L4/A100, selecione `INPUT_MODE = "prepared"` na configuração e envie esse pacote; os caminhos absolutos dos manifestos serão atualizados automaticamente.
+    """
+)
+
+code(
+    """
+    if INPUT_MODE == "raw":
+        prepared_export = Path("/content") / f"{RUN_ID}_dataset_preparado.tar.gz"
+        subprocess.run(
+            ["tar", "-czf", str(prepared_export), "-C", str(RUN_DIR), "data"],
+            check=True,
+        )
+        print(f"Dataset preparado: {prepared_export} | {prepared_export.stat().st_size / 1024**2:.1f} MB")
+        files.download(str(prepared_export))
+    else:
+        print("Dataset já foi importado de um pacote preparado.")
+    """
+)
+
+md(
+    """
     ## 3. Parte B — Clonagem zero-shot (`01_voice_cloning.ipynb`)
 
     ### 3.1 Carregar modelo, criar voice prompt e testar — original §§2–6
@@ -369,6 +445,8 @@ code(
     """
     from huggingface_hub import snapshot_download
     from qwen_tts import Qwen3TTSModel
+    import soundfile as sf
+    from IPython.display import Audio, display
 
     TEST_SENTENCES = [
         "Este é um teste de voz com uma frase que não apareceu durante o treinamento.",
@@ -414,7 +492,7 @@ md(
 
     ### 4.1 Preparar e treinar — original §2
 
-    O script oficial assume BF16 e FlashAttention. Para também funcionar em T4, fazemos ajustes de compatibilidade: escolhemos FP32/BF16 pela GPU, usamos `sdpa`, informamos ao Accelerate onde o TensorBoard deve gravar seus logs, aplicamos a projeção de texto exigida pelo modelo 0.6B e desativamos o modo `foreach` do AdamW em GPUs com menos de 20 GB para reduzir o pico de memória. O modelo-base já foi baixado localmente, evitando o problema do script ao copiar um identificador remoto.
+    O script oficial assume BF16 e FlashAttention. O fine-tuning completo é habilitado somente em L4/A100: a T4 não comporta de forma segura modelo, gradientes e estados do AdamW em FP32. Aplicamos `sdpa`, configuramos os logs do TensorBoard e mantemos a projeção de texto necessária para compatibilidade com a família 0.6B. O modelo-base já foi baixado localmente, evitando o problema do script ao copiar um identificador remoto.
 
     Esta célula de compatibilidade fica recolhida. Se o Qwen alterar o script oficial, ela interrompe com uma mensagem em vez de aplicar um patch incorreto.
     """
@@ -449,6 +527,12 @@ code(
 
 code(
     """
+    if not TRAINING_SUPPORTED:
+        raise RuntimeError(
+            "Fine-tuning completo bloqueado nesta GPU. Salve o pacote da seção 2.4, "
+            "abra uma sessão L4/A100 e use INPUT_MODE='prepared'."
+        )
+
     train_log = RUN_DIR / "train.log"
     env = os.environ.copy()
     env["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
