@@ -6,6 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOK_PATH = ROOT / "notebooks" / "01_qwen3_tts_clone_finetuning.ipynb"
+LORA_NOTEBOOK_PATH = ROOT / "notebooks" / "01_qwen3_tts_clone_finetuning_loRA.ipynb"
 
 
 def load_notebook() -> dict:
@@ -32,13 +33,14 @@ def test_notebook_has_all_didactic_sections_in_order() -> None:
 
 
 def test_all_python_cells_compile_and_have_no_saved_outputs() -> None:
-    notebook = load_notebook()
-    code_cells = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
-    assert code_cells
-    for index, cell in enumerate(code_cells):
-        ast.parse(cell["source"], filename=f"cell_{index}.py")
-        assert cell["execution_count"] is None
-        assert cell["outputs"] == []
+    for path in [NOTEBOOK_PATH, LORA_NOTEBOOK_PATH]:
+        notebook = json.loads(path.read_text(encoding="utf-8"))
+        code_cells = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
+        assert code_cells
+        for index, cell in enumerate(code_cells):
+            ast.parse(cell["source"], filename=f"{path.name}:cell_{index}.py")
+            assert cell["execution_count"] is None
+            assert cell["outputs"] == []
 
 
 def test_notebook_targets_colab_gpu_and_local_transfer() -> None:
@@ -75,6 +77,19 @@ def test_recording_script_has_expected_size_and_segments() -> None:
     words = re.findall(r"\b[\wÀ-ÿ-]+\b", script)
     assert 900 <= len(words) <= 1200
     assert len(re.findall(r"\[S\d{2}\]", script)) == 24
+
+
+def test_lora_notebook_is_separate_and_t4_oriented() -> None:
+    notebook = json.loads(LORA_NOTEBOOK_PATH.read_text(encoding="utf-8"))
+    source = "\n".join(cell["source"] for cell in notebook["cells"])
+    assert "Low-Rank Adaptation" in source
+    assert 'LORA_RANK = 8' in source
+    assert 'LORA_SCALE = 0.30' in source
+    assert 'MODEL_SIZE, MIXED_PRECISION, BATCH_SIZE = "0.6B", "no", 1' in source
+    assert 'TRAINING_SUPPORTED = True' in source
+    assert "sft_12hz_lora.py" in source
+    assert "infer_lora_custom_voice.py" in source
+    assert '"peft"' in source
 
 
 def test_gitignore_blocks_private_artifacts() -> None:

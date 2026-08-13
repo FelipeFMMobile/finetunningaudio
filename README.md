@@ -10,6 +10,12 @@ O código fica neste repositório. A gravação é enviada do Mac para a sessão
 
 Como o repositório é privado, abra o notebook pelo seletor **Arquivo → Abrir notebook → GitHub** do Colab e autorize o acesso aos repositórios privados, caso o link direto solicite autenticação.
 
+## Notebook LoRA para T4 gratuita
+
+[![Abrir LoRA no Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/FelipeFMMobile/finetunningaudio/blob/main/notebooks/01_qwen3_tts_clone_finetuning_loRA.ipynb)
+
+A variante `_loRA` mantém o modelo 0.6B em FP32 congelado e treina somente adaptadores PEFT LoRA. Ela foi criada para experimentar na T4 de 16 GB sem alterar o notebook de full fine-tuning. O caminho é experimental e usa uma implementação comunitária fixada a uma revisão conhecida; compare sempre zero-shot, LoRA e, quando houver GPU maior, full fine-tuning.
+
 ## Antes de começar
 
 1. Leia o [guia de gravação](docs/GUIA_GRAVACAO.md).
