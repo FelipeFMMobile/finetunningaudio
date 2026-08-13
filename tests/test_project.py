@@ -90,6 +90,8 @@ def test_lora_notebook_is_separate_and_t4_oriented() -> None:
     assert "sft_12hz_lora.py" in source
     assert "infer_lora_custom_voice.py" in source
     assert '"peft"' in source
+    assert 'infer_source.rstrip().endswith(main_guard)' in source
+    assert 'compile(infer_lora_script.read_text' in source
 
 
 def test_gitignore_blocks_private_artifacts() -> None:

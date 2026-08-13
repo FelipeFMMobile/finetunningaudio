@@ -83,6 +83,14 @@ if not lora_trainer.exists():
     subprocess.run(["git", "-C", str(QWEN_REPO), "apply", "--check", str(lora_patch)], check=True)
     subprocess.run(["git", "-C", str(QWEN_REPO), "apply", str(lora_patch)], check=True)
 
+infer_lora_script = QWEN_REPO / "finetuning" / "infer_lora_custom_voice.py"
+infer_source = infer_lora_script.read_text(encoding="utf-8")
+main_guard = 'if __name__ == "__main__":'
+if infer_source.rstrip().endswith(main_guard):
+    infer_source = infer_source.rstrip() + "\\n    main()\\n"
+    infer_lora_script.write_text(infer_source, encoding="utf-8")
+compile(infer_lora_script.read_text(encoding="utf-8"), str(infer_lora_script), "exec")
+
 subprocess.run(["apt-get", "update", "-qq"], check=True)
 subprocess.run(["apt-get", "install", "-y", "-qq", "ffmpeg", "sox", "libsox-fmt-all"], check=True)
 subprocess.run(
